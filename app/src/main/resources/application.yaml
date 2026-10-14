@@ -10,7 +10,8 @@ spring:
   jpa:
     open-in-view: false
     hibernate:
-      ddl-auto: ${JPA_DDL_AUTO:validate}
+      # 스키마는 Flyway만 변경한다
+      ddl-auto: validate
 
 server:
   port: ${PORT:3002}
