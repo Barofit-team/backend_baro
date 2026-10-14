@@ -3,4 +3,7 @@ dependencies {
 	implementation project(':modules:profile-api')
 	implementation project(':common')
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+
+	// DB가 필요 없는 단위 테스트만 둔다. DB 통합 테스트는 app 모듈에 있다
+	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 }

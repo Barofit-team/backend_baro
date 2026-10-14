@@ -1,0 +1,102 @@
+package com.barofit.identity.user;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import java.time.Instant;
+import java.util.UUID;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import org.hibernate.annotations.UuidGenerator;
+
+@Entity
+@Table(schema = "identity", name = "users")
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+public class User {
+
+	static final int NICKNAME_MAX_LENGTH = 100;
+	static final int PROFILE_IMAGE_URL_MAX_LENGTH = 2048;
+
+	@Id
+	@UuidGenerator(style = UuidGenerator.Style.VERSION_7)
+	private UUID id;
+
+	private String nickname;
+
+	private String profileImageUrl;
+
+	@Enumerated(EnumType.STRING)
+	@Column(nullable = false)
+	private UserRole role;
+
+	@Enumerated(EnumType.STRING)
+	@Column(nullable = false)
+	private UserStatus status;
+
+	private boolean onboarded;
+
+	private Instant lastLoginAt;
+
+	@Column(nullable = false, updatable = false)
+	private Instant createdAt;
+
+	@Column(nullable = false)
+	private Instant updatedAt;
+
+	private Instant withdrawnAt;
+
+	/**
+	 * 신규 가입. 닉네임과 프로필 사진은 가입할 때만 SNS 값으로 채운다.
+	 */
+	public static User register(String nickname, String profileImageUrl, Instant now) {
+		User user = new User();
+		user.nickname = truncate(nickname, NICKNAME_MAX_LENGTH);
+		// 잘린 URL은 쓸모가 없으므로 길이를 넘으면 저장하지 않는다
+		user.profileImageUrl = profileImageUrl != null && profileImageUrl.length() <= PROFILE_IMAGE_URL_MAX_LENGTH
+				? profileImageUrl : null;
+		user.role = UserRole.USER;
+		user.status = UserStatus.ACTIVE;
+		user.onboarded = false;
+		user.lastLoginAt = now;
+		user.createdAt = now;
+		user.updatedAt = now;
+		return user;
+	}
+
+	public void recordLogin(Instant now) {
+		this.lastLoginAt = now;
+		this.updatedAt = now;
+	}
+
+	public void completeOnboarding(Instant now) {
+		this.onboarded = true;
+		this.updatedAt = now;
+	}
+
+	/**
+	 * 탈퇴. 행은 지우지 않고 개인정보를 익명화한다.
+	 */
+	public void withdraw(Instant now) {
+		this.nickname = null;
+		this.profileImageUrl = null;
+		this.status = UserStatus.WITHDRAWN;
+		this.withdrawnAt = now;
+		this.updatedAt = now;
+	}
+
+	public boolean isActive() {
+		return status == UserStatus.ACTIVE;
+	}
+
+	private static String truncate(String value, int maxLength) {
+		if (value == null || value.length() <= maxLength) {
+			return value;
+		}
+		return value.substring(0, maxLength);
+	}
+}

@@ -28,6 +28,12 @@ configure(subprojects.findAll { it.path != ':modules' }) {
 		}
 	}
 
+	// Spring이 파라미터 이름을 읽을 수 있도록 한다(@Query의 named parameter, @RequestParam 등).
+	// Spring Boot 플러그인은 app에만 적용되므로 라이브러리 모듈에는 직접 설정한다
+	tasks.withType(JavaCompile).configureEach {
+		options.compilerArgs.add('-parameters')
+	}
+
 	repositories {
 		mavenCentral()
 	}
