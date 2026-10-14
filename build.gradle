@@ -3,12 +3,21 @@ plugins {
 	id 'io.spring.dependency-management' version '1.1.7' apply false
 }
 
+// postgres 이미지 태그는 compose.yaml 기준
+def postgresImage = providers.fileContents(layout.projectDirectory.file('compose.yaml')).asText.map { text ->
+	def matcher = text =~ /(?m)^\s*image:\s*(postgres:\S+)\s*$/
+	if (!matcher.find()) {
+		throw new GradleException('compose.yaml에서 postgres image 태그를 찾을 수 없습니다')
+	}
+	matcher.group(1)
+}
+
 allprojects {
 	group = 'com.barofit'
 	version = '0.0.1-SNAPSHOT'
 }
 
-// ':modules'는 도메인 모듈을 묶는 폴더일 뿐이므로 공통 설정에서 제외
+// ':modules'는 폴더라 제외
 configure(subprojects.findAll { it.path != ':modules' }) {
 	apply plugin: 'java-library'
 	apply plugin: 'io.spring.dependency-management'
@@ -17,6 +26,11 @@ configure(subprojects.findAll { it.path != ':modules' }) {
 		toolchain {
 			languageVersion = JavaLanguageVersion.of(21)
 		}
+	}
+
+	// 파라미터 이름 유지(@Query named parameter 등)
+	tasks.withType(JavaCompile).configureEach {
+		options.compilerArgs.add('-parameters')
 	}
 
 	repositories {
@@ -39,5 +53,7 @@ configure(subprojects.findAll { it.path != ':modules' }) {
 
 	tasks.named('test') {
 		useJUnitPlatform()
+		// compose.yaml과 같은 postgres 이미지 사용
+		jvmArgumentProviders.add({ ["-Dbarofit.test.postgres-image=${postgresImage.get()}".toString()] } as CommandLineArgumentProvider)
 	}
 }
