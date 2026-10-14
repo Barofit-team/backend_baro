@@ -19,6 +19,14 @@ barofit:
     private-key-path: ${JWT_PRIVATE_KEY_PATH:}
     public-jwks-path: ${JWT_PUBLIC_JWKS_PATH:}
     current-kid: ${JWT_CURRENT_KID:}
+  social:
+    # aud 허용 목록이 비어 있는 provider는 모든 ID Token을 거부한다. 여러 값은 쉼표로 구분한다
+    google:
+      jwk-set-uri: https://www.googleapis.com/oauth2/v3/certs
+      audiences: ${GOOGLE_CLIENT_IDS:}
+    kakao:
+      jwk-set-uri: https://kauth.kakao.com/.well-known/jwks.json
+      audiences: ${KAKAO_APP_KEYS:}
 
 server:
   port: ${PORT:3002}
