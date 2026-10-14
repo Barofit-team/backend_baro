@@ -14,6 +14,7 @@ import com.barofit.IntegrationTest;
 import com.barofit.TestTokens;
 import com.barofit.common.error.BusinessException;
 import com.barofit.identity.api.UserQueryApi;
+import com.barofit.identity.api.UserSummary;
 import com.barofit.identity.api.event.UserRegistered;
 import com.barofit.identity.api.event.UserWithdrawn;
 import com.barofit.identity.auth.AuthErrorCode;
@@ -387,6 +388,21 @@ class AuthApiTest {
 	}
 
 	@Test
+	void 여러_사용자를_한_번에_조회하면_탈퇴했거나_없는_사용자는_빠진다() throws Exception {
+		UUID first = loginAs("kakao-sub-1", "첫째");
+		UUID second = loginAs("kakao-sub-2", "둘째");
+		UUID withdrawn = loginAs("kakao-sub-3", "탈퇴자");
+		userAccountService.withdraw(withdrawn);
+
+		Map<UUID, UserSummary> summaries =
+				userQueryApi.findSummaries(List.of(first, second, second, withdrawn, UUID.randomUUID()));
+
+		assertThat(summaries).containsOnlyKeys(first, second);
+		assertThat(summaries.get(second).nickname()).isEqualTo("둘째");
+		assertThat(userQueryApi.findSummaries(List.of())).isEmpty();
+	}
+
+	@Test
 	void 정리_배치는_절대_만료가_지난_행만_지운다() throws Exception {
 		givenKakaoUser("카카오유저");
 		String expiredSession = refreshToken(login());
@@ -406,6 +422,12 @@ class AuthApiTest {
 	private void givenKakaoUser(String nickname) {
 		given(socialIdTokenVerifier.verify(eq(SocialProvider.KAKAO), any()))
 				.willReturn(new SocialIdentity(SocialProvider.KAKAO, KAKAO_SUB, nickname, null));
+	}
+
+	private UUID loginAs(String kakaoSub, String nickname) throws Exception {
+		given(socialIdTokenVerifier.verify(eq(SocialProvider.KAKAO), any()))
+				.willReturn(new SocialIdentity(SocialProvider.KAKAO, kakaoSub, nickname, null));
+		return UUID.fromString(userId(body(login())));
 	}
 
 	private ResultActions login() throws Exception {
