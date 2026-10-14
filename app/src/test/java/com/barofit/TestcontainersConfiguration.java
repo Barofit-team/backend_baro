@@ -6,10 +6,7 @@ import org.springframework.context.annotation.Bean;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 
-/**
- * 테스트 전체가 공유하는 PostgreSQL 컨테이너. 이미지 태그는 Gradle이 compose.yaml에서 읽어 넘긴다.
- * 여러 테스트 컨텍스트가 같은 컨테이너를 쓰므로, 컨텍스트가 닫혀도 멈추지 않게 destroyMethod를 비운다.
- */
+/** 공유 PostgreSQL 컨테이너. 이미지 태그는 compose.yaml에서 읽는다 */
 @TestConfiguration(proxyBeanMethods = false)
 public class TestcontainersConfiguration {
 

@@ -7,9 +7,7 @@ import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.HexFormat;
 
-/**
- * Refresh Token 원문 생성과 해시. 원문은 불투명한 256bit 랜덤 값이고, DB에는 SHA-256 해시만 저장한다.
- */
+/** Refresh Token 원문(256bit 랜덤) 생성과 SHA-256 해시 */
 public final class RefreshTokenValues {
 
 	private static final SecureRandom RANDOM = new SecureRandom();

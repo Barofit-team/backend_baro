@@ -50,13 +50,11 @@ public class User {
 
 	private Instant withdrawnAt;
 
-	/**
-	 * 신규 가입. 닉네임과 프로필 사진은 가입할 때만 SNS 값으로 채운다.
-	 */
+	/** 신규 가입. 닉네임·사진은 가입 때만 SNS 값으로 채운다 */
 	public static User register(String nickname, String profileImageUrl, Instant now) {
 		User user = new User();
 		user.nickname = truncate(nickname, NICKNAME_MAX_LENGTH);
-		// 잘린 URL은 쓸모가 없으므로 길이를 넘으면 저장하지 않는다
+		// 길이를 넘는 URL은 저장하지 않는다
 		user.profileImageUrl = profileImageUrl != null && profileImageUrl.length() <= PROFILE_IMAGE_URL_MAX_LENGTH
 				? profileImageUrl : null;
 		user.role = UserRole.USER;
@@ -78,9 +76,7 @@ public class User {
 		this.updatedAt = now;
 	}
 
-	/**
-	 * 탈퇴. 행은 지우지 않고 개인정보를 익명화한다.
-	 */
+	/** 탈퇴. 행은 남기고 개인정보를 익명화한다 */
 	public void withdraw(Instant now) {
 		this.nickname = null;
 		this.profileImageUrl = null;

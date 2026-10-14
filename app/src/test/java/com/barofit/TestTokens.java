@@ -18,9 +18,7 @@ import org.springframework.security.oauth2.jwt.JwtClaimsSet;
 import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 
-/**
- * 테스트용 바로핏 Access Token. 기본값은 발급 규칙(4-1)과 같고, 필요한 claim만 바꿔 위조·만료 토큰을 만든다.
- */
+/** 테스트용 Access Token. claim을 바꿔 위조·만료 토큰을 만든다 */
 public final class TestTokens {
 
 	private TestTokens() {

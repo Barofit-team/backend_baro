@@ -3,5 +3,5 @@ rootProject.name = 'backend_baro'
 include 'app'
 include 'common'
 
-// 도메인 하나에 모듈 하나. 도메인 추가 시 modules/ 하위에 {도메인}-service 모듈을 만들고 아래처럼 등록
+// 도메인 추가 시 modules/{도메인}-service 등록
 include 'modules:identity-service'

@@ -18,9 +18,7 @@ class UserController {
 
 	private final UserAccountService userAccountService;
 
-	/**
-	 * 탈퇴. 성공하면 앱이 SDK unlink(카카오) 또는 revokeAccess(구글)를 시도한다. 이미 탈퇴했어도 204.
-	 */
+	/** 탈퇴. 이미 탈퇴했어도 204 */
 	@DeleteMapping("/me")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	void withdraw(@AuthenticationPrincipal Jwt jwt) {

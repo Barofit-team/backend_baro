@@ -27,14 +27,13 @@ class ArchitectureTests {
 			.should().dependOnClassesThat(
 					resideInAPackage("com.barofit..").and(resideOutsideOfPackage("com.barofit.common..")));
 
-	// api 패키지는 서비스 분리 후 언어 독립 계약으로 바뀔 수 있도록 JDK 타입만 쓴다
+	// api 패키지는 JDK 타입만 쓴다
 	@ArchTest
 	static final ArchRule api_패키지는_JDK와_다른_api_패키지에만_의존한다 = classes()
 			.that().resideInAPackage("com.barofit.*.api..")
 			.should().onlyDependOnClassesThat().resideInAnyPackage("java..", "com.barofit.*.api..");
 
-	// 도메인 모듈(modules/)은 com.barofit.{도메인} 패키지를 쓴다.
-	// 다른 도메인(app 포함)은 그 도메인의 api 패키지만 참조할 수 있다. Gradle 모듈로 나누지 않으므로 여기서 경계를 지킨다
+	// 다른 도메인은 api 패키지만 참조한다
 	@ArchTest
 	static final ArchRule 다른_도메인은_api_패키지만_참조한다 = classes()
 			.that().resideInAPackage("com.barofit..")
@@ -61,7 +60,7 @@ class ArchitectureTests {
 		};
 	}
 
-	/** modules/ 아래 도메인 모듈의 클래스면 도메인 이름(com.barofit 다음 패키지)을 돌려준다 */
+	/** modules/ 클래스면 도메인 이름을 돌려준다 */
 	private static Optional<String> domainOf(JavaClass javaClass) {
 		String packageName = javaClass.getPackageName();
 		if (!packageName.startsWith(ROOT_PACKAGE)) {

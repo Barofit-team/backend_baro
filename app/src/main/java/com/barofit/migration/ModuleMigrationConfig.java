@@ -15,7 +15,7 @@ class ModuleMigrationConfig {
 		return new ModuleMigrations(dataSource, schemas);
 	}
 
-	// Hibernate validate보다 마이그레이션이 먼저 실행되도록 순서를 보장한다
+	// Hibernate validate보다 먼저 마이그레이션
 	@Bean
 	static EntityManagerFactoryDependsOnPostProcessor entityManagerFactoryDependsOnModuleMigrations() {
 		return new EntityManagerFactoryDependsOnPostProcessor(ModuleMigrations.class);

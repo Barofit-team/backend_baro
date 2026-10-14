@@ -13,9 +13,7 @@ import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
 import org.springframework.stereotype.Component;
 
-/**
- * 바로핏 Access Token(JWT) 발급. 개인정보(닉네임, 이메일 등)는 넣지 않는다.
- */
+/** Access Token 발급. 개인정보는 넣지 않는다 */
 @Component
 public class AccessTokenIssuer {
 

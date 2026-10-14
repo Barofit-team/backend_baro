@@ -19,9 +19,7 @@ class UserQueryService implements UserQueryApi {
 
 	private final UserRepository userRepository;
 
-	/**
-	 * 탈퇴한 사용자는 없는 사용자로 취급한다.
-	 */
+	/** 탈퇴한 사용자는 없는 사용자로 취급 */
 	@Override
 	@Transactional(readOnly = true)
 	public Optional<UserSummary> findSummary(UUID userId) {

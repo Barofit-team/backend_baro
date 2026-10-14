@@ -6,10 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.flywaydb.core.Flyway;
 import com.barofit.common.migration.ModuleSchema;
 
-/**
- * 모듈마다 독립된 Flyway 인스턴스로 마이그레이션한다. 이력 테이블은 각 모듈의 schema 안에 생긴다.
- * Spring Boot의 Flyway 자동설정을 쓰지 않으므로, EntityManagerFactory가 이 Bean에 의존하도록 등록한다(ModuleMigrationConfig).
- */
+/** 모듈 schema마다 Flyway를 따로 실행한다 */
 @Slf4j
 public class ModuleMigrations {
 

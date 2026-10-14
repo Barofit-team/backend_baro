@@ -17,7 +17,7 @@ class JwtKeyConfig {
 		return JwtKeys.load(properties);
 	}
 
-	// 서명 키(개인키)는 identity 안에서만 쓴다. 다른 모듈에 JwtEncoder를 노출하지 않도록 이름으로 주입한다
+	// 서명 키는 identity 안에서만 쓴다
 	@Bean
 	JwtEncoder barofitJwtEncoder(JwtKeys jwtKeys) {
 		return new NimbusJwtEncoder(new ImmutableJWKSet<>(new JWKSet(jwtKeys.getSigningKey())));

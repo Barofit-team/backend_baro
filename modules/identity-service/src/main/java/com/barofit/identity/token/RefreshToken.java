@@ -12,10 +12,7 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-/**
- * Refresh Token 한 개. 원문은 저장하지 않고 SHA-256 해시만 저장한다.
- * 회전할 때마다 새 행이 생기며, 폐기된 행은 재사용 탐지를 위해 절대 만료까지 남겨 둔다.
- */
+/** Refresh Token. 해시만 저장하고 폐기 행은 절대 만료까지 남긴다 */
 @Entity
 @Table(schema = "identity", name = "refresh_tokens")
 @Getter

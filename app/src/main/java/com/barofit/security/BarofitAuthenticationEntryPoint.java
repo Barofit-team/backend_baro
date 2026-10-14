@@ -9,10 +9,7 @@ import org.springframework.security.oauth2.jwt.JwtValidationException;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.web.servlet.HandlerExceptionResolver;
 
-/**
- * 인증 실패를 공통 에러 형식(ProblemDetail + code)으로 응답한다.
- * 기본 EntryPoint는 만료와 위조를 모두 invalid_token으로 응답하므로, 앱이 refresh 여부를 판단할 수 있게 둘을 나눈다.
- */
+/** 인증 실패 응답. 만료와 위조를 다른 code로 구분한다 */
 class BarofitAuthenticationEntryPoint implements AuthenticationEntryPoint {
 
 	private final HandlerExceptionResolver handlerExceptionResolver;
@@ -28,7 +25,7 @@ class BarofitAuthenticationEntryPoint implements AuthenticationEntryPoint {
 				? SecurityErrorCode.AUTH_TOKEN_EXPIRED
 				: SecurityErrorCode.AUTH_INVALID_TOKEN;
 		response.setHeader(HttpHeaders.WWW_AUTHENTICATE, "Bearer");
-		// 컨트롤러 예외와 같은 경로(GlobalExceptionHandler)로 응답 body를 만든다
+		// GlobalExceptionHandler와 같은 형식으로 응답
 		handlerExceptionResolver.resolveException(request, response, null, new BusinessException(errorCode));
 	}
 

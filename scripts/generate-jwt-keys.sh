@@ -1,8 +1,5 @@
 #!/usr/bin/env bash
-# 로컬 개발용 바로핏 JWT 서명 키를 만든다. 결과는 gitignore된 keys/ 폴더에 저장된다.
-#   keys/jwt-private.pem : 개인키 (PKCS#8 PEM)
-#   keys/jwt-jwks.json   : 공개키 목록 (JWK Set)
-# 운영 키는 이 스크립트로 만들지 않는다(k8s Secret, 시크릿 매니저 사용).
+# 로컬 개발용 JWT 키를 keys/에 만든다(운영 키는 시크릿 매니저 사용)
 set -euo pipefail
 
 cd "$(dirname "$0")/.."

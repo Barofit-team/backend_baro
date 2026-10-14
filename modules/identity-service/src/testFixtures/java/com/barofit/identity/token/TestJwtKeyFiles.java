@@ -15,18 +15,14 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 
-/**
- * 테스트용 JWT 키. 메모리에서 생성해 임시 파일(PKCS#8 PEM, JWK Set)로 쓴다. 저장소에 키를 커밋하지 않기 위해서다.
- */
+/** 테스트용 JWT 키를 임시 파일로 만든다 */
 public record TestJwtKeyFiles(Path privateKeyPath, Path publicJwksPath, String currentKid, KeyPair keyPair) {
 
 	public static TestJwtKeyFiles create(String kid) {
 		return create(kid, generateKeyPair(), List.of());
 	}
 
-	/**
-	 * @param extraPublicKeys 공개키 목록에 함께 넣을 키(키 교체 상황 재현용)
-	 */
+	/** @param extraPublicKeys 키 교체 재현용 추가 공개키 */
 	public static TestJwtKeyFiles create(String kid, KeyPair keyPair, List<RSAKey> extraPublicKeys) {
 		try {
 			Path dir = Files.createTempDirectory("barofit-jwt");

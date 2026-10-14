@@ -30,7 +30,7 @@ class AccessTokenIssuerTest {
 
 		var issued = issuer.issue(userId, UserRole.USER);
 
-		// 서명만 검증하고 시간 검증은 끈다(고정 시각으로 발급했기 때문)
+		// 고정 시각 발급이라 시간 검증은 끈다
 		NimbusJwtDecoder decoder = NimbusJwtDecoder.withJwkSource(new ImmutableJWKSet<>(keys.getPublicJwks())).build();
 		decoder.setJwtValidator(jwt -> OAuth2TokenValidatorResult.success());
 		Jwt jwt = decoder.decode(issued.value());

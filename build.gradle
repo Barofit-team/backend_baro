@@ -3,7 +3,7 @@ plugins {
 	id 'io.spring.dependency-management' version '1.1.7' apply false
 }
 
-// postgres 이미지 태그의 기준은 compose.yaml 하나다. 찾지 못하면 테스트를 실행하지 않는다
+// postgres 이미지 태그는 compose.yaml 기준
 def postgresImage = providers.fileContents(layout.projectDirectory.file('compose.yaml')).asText.map { text ->
 	def matcher = text =~ /(?m)^\s*image:\s*(postgres:\S+)\s*$/
 	if (!matcher.find()) {
@@ -17,7 +17,7 @@ allprojects {
 	version = '0.0.1-SNAPSHOT'
 }
 
-// ':modules'는 도메인 모듈을 묶는 폴더일 뿐이므로 공통 설정에서 제외
+// ':modules'는 폴더라 제외
 configure(subprojects.findAll { it.path != ':modules' }) {
 	apply plugin: 'java-library'
 	apply plugin: 'io.spring.dependency-management'
@@ -28,8 +28,7 @@ configure(subprojects.findAll { it.path != ':modules' }) {
 		}
 	}
 
-	// Spring이 파라미터 이름을 읽을 수 있도록 한다(@Query의 named parameter, @RequestParam 등).
-	// Spring Boot 플러그인은 app에만 적용되므로 라이브러리 모듈에는 직접 설정한다
+	// 파라미터 이름 유지(@Query named parameter 등)
 	tasks.withType(JavaCompile).configureEach {
 		options.compilerArgs.add('-parameters')
 	}
@@ -54,7 +53,7 @@ configure(subprojects.findAll { it.path != ':modules' }) {
 
 	tasks.named('test') {
 		useJUnitPlatform()
-		// Testcontainers가 compose.yaml과 같은 postgres 이미지를 쓰도록 전달
+		// compose.yaml과 같은 postgres 이미지 사용
 		jvmArgumentProviders.add({ ["-Dbarofit.test.postgres-image=${postgresImage.get()}".toString()] } as CommandLineArgumentProvider)
 	}
 }

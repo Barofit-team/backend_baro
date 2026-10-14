@@ -14,9 +14,7 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-/**
- * 회원은 (provider, providerUserId)로 식별한다. 이메일로 식별하지 않는다.
- */
+/** 회원은 (provider, providerUserId)로 식별한다 */
 @Entity
 @Table(schema = "identity", name = "social_accounts")
 @Getter

@@ -43,7 +43,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 		return handleExceptionInternal(ex, problem, headers, status, request);
 	}
 
-	// Spring MVC 표준 예외(404, 405, 400 등)의 응답에도 code를 붙인다. body는 이 단계에서 확정된다
+	// 표준 예외 응답에도 code를 붙인다
 	@Override
 	protected ResponseEntity<Object> createResponseEntity(
 			Object body, HttpHeaders headers, HttpStatusCode statusCode, WebRequest request) {

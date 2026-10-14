@@ -33,9 +33,7 @@ import org.springframework.security.web.util.matcher.OrRequestMatcher;
 import org.springframework.security.web.util.matcher.RequestMatcher;
 import org.springframework.web.servlet.HandlerExceptionResolver;
 
-/**
- * 바로핏 JWT 검증. 두 번째 서비스가 분리될 때 common(barofit-common-web)으로 옮긴다.
- */
+/** 바로핏 JWT 검증 설정 */
 @Configuration(proxyBeanMethods = false)
 class SecurityConfig {
 
@@ -69,7 +67,7 @@ class SecurityConfig {
 	@Bean
 	JwtDecoder barofitJwtDecoder(@Value("${barofit.jwt.public-jwks-path}") String publicJwksPath, Clock clock)
 			throws IOException, ParseException {
-		// 키 교체 기간에 이전 키와 새 키를 모두 검증해야 하므로 공개키 하나가 아닌 JWK Set을 쓴다
+		// 키 교체를 위해 JWK Set 사용
 		JWKSet jwks = JWKSet.load(Path.of(publicJwksPath).toFile()).toPublicJWKSet();
 		NimbusJwtDecoder decoder = NimbusJwtDecoder.withJwkSource(new ImmutableJWKSet<>(jwks)).build();
 		decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
@@ -85,10 +83,7 @@ class SecurityConfig {
 		return new BarofitAuthenticationEntryPoint(handlerExceptionResolver);
 	}
 
-	/**
-	 * 공개 경로에서는 Bearer 헤더를 무시한다. 만료된 Access Token이 붙은 채로 /auth/refresh를 호출해도
-	 * Resource Server가 먼저 401을 내지 않게 하기 위해서다(permitAll만으로는 막을 수 없다).
-	 */
+	/** 공개 경로에서는 Bearer 헤더를 무시한다(만료 토큰으로 refresh 호출 허용) */
 	static BearerTokenResolver bearerTokenResolver() {
 		DefaultBearerTokenResolver delegate = new DefaultBearerTokenResolver();
 		List<RequestMatcher> matchers = Arrays.stream(IdentityPublicPaths.ALL)

@@ -21,13 +21,11 @@ import java.util.Base64;
 import java.util.UUID;
 import lombok.Getter;
 
-/**
- * 바로핏 JWT 서명 키와 공개키 목록. 생성 시점에 개인키와 현재 kid의 공개키가 짝인지 검증하고, 아니면 앱이 뜨지 않는다.
- */
+/** JWT 서명 키와 공개키 목록. 짝이 맞지 않으면 기동 실패 */
 @Getter
 public class JwtKeys {
 
-	/** 서명용 키(개인키 포함). kid는 현재 서명 kid */
+	/** 서명용 키 */
 	private final RSAKey signingKey;
 
 	/** 검증용 공개키 목록 */
@@ -75,7 +73,7 @@ public class JwtKeys {
 		return (RSAPrivateKey) KeyFactory.getInstance("RSA").generatePrivate(new PKCS8EncodedKeySpec(der));
 	}
 
-	// 키 교체 사고(개인키와 공개키 목록이 어긋남)를 시작 시점에 잡는다
+	// 개인키와 공개키 짝 확인
 	private static void verifyKeyPair(RSAPrivateKey privateKey, RSAKey publicKey) {
 		try {
 			JWSObject probe = new JWSObject(new JWSHeader(JWSAlgorithm.RS256), new Payload(UUID.randomUUID().toString()));

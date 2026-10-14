@@ -24,7 +24,7 @@ public enum CommonErrorCode implements ErrorCode {
 		return name();
 	}
 
-	/** Spring MVC가 던지는 표준 예외의 상태 코드를 공통 코드로 매핑한다 */
+	/** Spring MVC 표준 예외 상태를 공통 코드로 매핑 */
 	public static CommonErrorCode fromStatus(HttpStatusCode status) {
 		return switch (status.value()) {
 			case 404 -> NOT_FOUND;

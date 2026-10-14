@@ -10,10 +10,7 @@ import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtTimestampValidator;
 
-/**
- * exp/nbf 검증(JwtTimestampValidator)을 감싸, 만료일 때는 별도 에러 코드를 담는다.
- * EntryPoint가 예외 메시지 문자열이 아닌 이 코드로 만료와 위조를 구분한다. iat가 미래인 토큰도 거부한다.
- */
+/** exp·nbf 검증. 만료는 별도 코드로 구분하고 미래 iat는 거부한다 */
 class AccessTokenTimestampValidator implements OAuth2TokenValidator<Jwt> {
 
 	static final String EXPIRED_ERROR_CODE = "barofit_token_expired";
