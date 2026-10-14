@@ -79,6 +79,19 @@ RFC 9457 Problem Details 형식에 `code` 속성을 더해 응답합니다. 앱�
 - 모듈은 `ModuleSchema` Bean을 등록하고, 마이그레이션 파일은 `src/main/resources/db/migration/{schema}/`에 둡니다. 버전은 모듈마다 `V1`부터 매깁니다.
 - JPA `ddl-auto`는 `validate` 고정입니다. 스키마 변경은 마이그레이션 파일로만 합니다.
 
+## 인증 API
+| API | 인증 | 설명 |
+|---|---|---|
+| `POST /api/v1/auth/social-login` | 없음 | `{ provider: GOOGLE\|KAKAO, idToken }` → `{ accessToken, accessTokenExpiresAt, refreshToken, isOnboarded, user }`. 신규면 가입 |
+| `POST /api/v1/auth/refresh` | 없음 | `{ refreshToken }` → `{ accessToken, accessTokenExpiresAt, refreshToken }`. 쓸 때마다 회전 |
+| `POST /api/v1/auth/logout` | 없음 | `{ refreshToken }` → 항상 204. 해당 세션만 폐기 |
+| `DELETE /api/v1/users/me` | Access Token | 탈퇴. 이미 탈퇴했어도 204 |
+| `GET /.well-known/jwks.json` | 없음 | 바로핏 JWT 공개키 |
+
+- `/api/v1/auth/**`에서는 Authorization 헤더를 무시합니다. 만료된 Access Token이 붙어 있어도 refresh할 수 있습니다.
+- 401 `code`: `AUTH_TOKEN_EXPIRED`(refresh 시도), `AUTH_INVALID_TOKEN`·`AUTH_SESSION_REVOKED`·`AUTH_INVALID_REFRESH`·`AUTH_INVALID_ID_TOKEN`(재로그인), `AUTH_USER_WITHDRAWN`(로그인 화면)
+- 소셜 ID Token의 aud 허용 목록은 `GOOGLE_CLIENT_IDS`, `KAKAO_APP_KEYS`(쉼표 구분)로 설정합니다. 비어 있는 provider의 로그인은 모두 거부됩니다.
+
 ## JWT 키
 바로핏 Access Token은 RS256으로 서명합니다. 키는 **어떤 환경에서도 저장소에 커밋하지 않습니다.**
 
