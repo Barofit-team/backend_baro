@@ -5,6 +5,9 @@ build/
 !**/src/main/**/build/
 !**/src/test/**/build/
 
+# JWT 키 (어떤 환경에서도 커밋하지 않는다)
+keys/
+
 # Environment variables
 .env
 .env.*

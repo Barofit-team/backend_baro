@@ -13,5 +13,12 @@ spring:
       # 스키마는 Flyway만 변경한다
       ddl-auto: validate
 
+barofit:
+  jwt:
+    # 키 파일은 저장소에 커밋하지 않는다. 로컬은 scripts/generate-jwt-keys.sh로 생성한다
+    private-key-path: ${JWT_PRIVATE_KEY_PATH:}
+    public-jwks-path: ${JWT_PUBLIC_JWKS_PATH:}
+    current-kid: ${JWT_CURRENT_KID:}
+
 server:
   port: ${PORT:3002}

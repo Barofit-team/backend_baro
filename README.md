@@ -79,8 +79,24 @@ RFC 9457 Problem Details 형식에 `code` 속성을 더해 응답합니다. 앱�
 - 모듈은 `ModuleSchema` Bean을 등록하고, 마이그레이션 파일은 `src/main/resources/db/migration/{schema}/`에 둡니다. 버전은 모듈마다 `V1`부터 매깁니다.
 - JPA `ddl-auto`는 `validate` 고정입니다. 스키마 변경은 마이그레이션 파일로만 합니다.
 
+## JWT 키
+바로핏 Access Token은 RS256으로 서명합니다. 키는 **어떤 환경에서도 저장소에 커밋하지 않습니다.**
+
+| 설정 | 내용 |
+|---|---|
+| `JWT_PRIVATE_KEY_PATH` | 서명용 개인키. PEM(PKCS#8) 파일 |
+| `JWT_PUBLIC_JWKS_PATH` | 검증용 공개키 목록. JWK Set 파일. 키 교체 기간에는 이전 키와 새 키를 함께 넣습니다 |
+| `JWT_CURRENT_KID` | 현재 서명에 쓰는 kid. 공개키 목록에 있어야 합니다 |
+
+- 로컬: `./scripts/generate-jwt-keys.sh`로 `keys/`(gitignore)에 생성하고, 출력된 값을 `.env`에 넣습니다.
+- Docker: `keys/`를 컨테이너에 읽기 전용으로 마운트합니다(`compose.yaml`).
+- 테스트: 메모리에서 키를 생성합니다(`TestJwtKeyFiles`).
+- 앱이 시작할 때 개인키와 현재 kid의 공개키가 짝인지 검증하고, 아니면 기동하지 않습니다.
+
 ## 실행
 ```bash
+./scripts/generate-jwt-keys.sh  # 최초 1회. 출력된 JWT_* 값을 .env에 설정
+
 # Docker로 app + postgres 실행
 docker compose up -d --build   # http://localhost:3002
 

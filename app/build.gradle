@@ -26,6 +26,7 @@ dependencies {
 	testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
 	testImplementation 'org.testcontainers:testcontainers-postgresql'
 	testImplementation 'com.tngtech.archunit:archunit-junit5:1.4.1'
+	testImplementation(testFixtures(project(':modules:identity')))
 }
 
 // 루트의 .env를 읽을 수 있도록 루트 경로에서 실행
