@@ -1,8 +1,8 @@
 # Identity 서비스 개발 문서
 
 - 작성일: 2026-10-14
-- 이슈: #2 (OAuth2.0 로그인 기능 개발) / 브랜치: `2-feat-oauth20-로그인-기능-개발`
-- 테스트: `./gradlew build` 기준 73건 통과, 실패 0건
+- 이슈: #2 (OAuth2.0 로그인 기능 개발), #5 (로그인 로직 변경: 인가 코드 로그인 추가)
+- 테스트: `./gradlew build` 기준 90건 통과, 실패 0건
 
 ## 목차
 1. [개요](#1-개요)
@@ -16,11 +16,12 @@
 
 ## 1. 개요
 
-Google·Kakao 소셜 로그인만 사용하는 회원 체계다. 앱이 각 SDK로 로그인해 받은 **OIDC ID Token**을 서버에 보내면, 서버가 검증한 뒤 바로핏 토큰(Access Token, Refresh Token)을 발급한다.
+Google·Kakao 소셜 로그인만 사용하는 회원 체계다. 현재 앱(Expo Go)은 WebView로 받은 **인가 코드**를 서버에 보내고, 서버가 client secret으로 코드를 **OIDC ID Token**으로 바꿔 검증한 뒤 바로핏 토큰(Access Token, Refresh Token)을 발급한다. SDK로 받은 ID Token을 직접 보내는 방식도 지원한다.
 
 | 기능 | 위치 |
 |---|---|
-| 소셜 로그인과 자동 가입 | `POST /api/v1/auth/social-login` |
+| 소셜 로그인과 자동 가입(인가 코드, 현재 앱) | `POST /api/v1/auth/social-login/code` |
+| 소셜 로그인과 자동 가입(ID Token, SDK) | `POST /api/v1/auth/social-login` |
 | 토큰 갱신(회전, 재사용 탐지) | `POST /api/v1/auth/refresh` |
 | 로그아웃(현재 기기 세션 폐기) | `POST /api/v1/auth/logout` |
 | 회원 탈퇴(멱등) | `DELETE /api/v1/users/me` |
@@ -29,7 +30,7 @@ Google·Kakao 소셜 로그인만 사용하는 회원 체계다. 앱이 각 SDK�
 | 다른 도메인용 사용자 조회 | `UserQueryApi.findSummary`, `findSummaries` |
 | 만료 토큰 정리 | 매일 04:00 배치 |
 
-**범위 밖:** 회원 정보 조회·수정 API(`GET /users/me` 등), 사용자 프로필(온보딩) 데이터와 API, 실제 Google·Kakao 토큰으로 하는 연동 확인.
+**범위 밖:** 회원 정보 조회·수정 API(`GET /users/me` 등), 사용자 프로필(온보딩) 데이터와 API.
 
 ---
 
@@ -120,9 +121,24 @@ RFC 9457 Problem Details에 `code`를 더한다. 각 도메인은 `ErrorCode`를
 - aud 목록이 비어 있는 provider는 **모든 토큰을 거부한다.** 서버는 정상 기동하고 경고 로그만 남긴다.
 - 공개키 조회 타임아웃은 연결 3초, 읽기 5초다. 조회 실패는 503 `AUTH_SOCIAL_PROVIDER_UNAVAILABLE`, 토큰 문제는 401 `AUTH_INVALID_ID_TOKEN`이다.
 - 소셜 디코더는 Bean으로 등록하지 않는다. Bean이 되면 Resource Server가 바로핏 JWT 검증에 잘못 쓸 수 있다. `JwtDecoder` Bean이 하나뿐인지 테스트로 확인한다.
-- nonce는 MVP에서 검증하지 않는다.
+- SDK 방식(ID Token 직접 전달)은 nonce를 검증하지 않는다. 인가 코드 방식은 앱이 만든 nonce를 ID Token의 nonce와 대조한다.
+- Kakao `picture`가 `http://`이면 `https://`로 바꿔 저장한다(iOS가 http 이미지를 막음, 같은 CDN이 https 제공).
 
 ### 3.7 소셜 로그인과 가입
+로그인 방식은 두 가지이고, 3번부터는 같은 로직을 쓴다.
+
+| 방식 | API | 앱 | 쓰는 곳 |
+|---|---|---|---|
+| **인가 코드**(현재 앱) | `POST /api/v1/auth/social-login/code` | WebView로 카카오·구글 로그인 → `code` 전달 | Expo Go |
+| ID Token(SDK) | `POST /api/v1/auth/social-login` | 네이티브 SDK로 받은 `idToken` 전달 | 개발 빌드 전환 시 |
+
+**인가 코드 방식**
+- 서버가 `redirectUri`가 허용 목록(`SOCIAL_REDIRECT_URIS`)에 있는지 확인한다. 없으면 400이고, 코드 교환을 하지 않는다.
+- 서버가 client secret으로 `code`를 provider 토큰 엔드포인트에서 교환해 `id_token`을 받는다. 타임아웃은 연결 3초, 읽기 5초이고, 코드와 시크릿은 로그에 남기지 않는다.
+- `id_token`을 3.6과 같이 검증하고, 앱이 보낸 `nonce`와 같은지 확인한다. 교환에 쓴 클라이언트 ID(Kakao REST API 키, Google 웹 클라이언트 ID)는 `aud`로 자동 허용된다.
+- 교환 실패 처리: `invalid_grant`(만료·재사용된 코드, redirect_uri 불일치)는 401 `AUTH_INVALID_AUTHORIZATION_CODE`. `invalid_client`(시크릿 오류)·5xx·타임아웃·`id_token` 없음(OIDC 꺼짐)·설정 누락은 503 `AUTH_SOCIAL_PROVIDER_UNAVAILABLE`과 서버 ERROR/WARN 로그.
+
+**공통**
 1. ID Token을 검증한다. 네트워크 호출이 있어 트랜잭션 밖에서 한다.
 2. `(provider, sub)`로 연결된 계정이 있으면 로그인한다. 마지막 로그인 시각을 갱신하고 새 세션을 만든다.
 3. 없으면 가입한다. 사용자와 소셜 계정을 저장하고 `UserRegistered`를 발행한다.
@@ -157,6 +173,7 @@ RFC 9457 Problem Details에 `code`를 더한다. 각 도메인은 `ErrorCode`를
 
 | Method | Path | 인증 | 성공 |
 |---|---|---|---|
+| POST | `/api/v1/auth/social-login/code` | 없음 | 200 |
 | POST | `/api/v1/auth/social-login` | 없음 | 200 |
 | POST | `/api/v1/auth/refresh` | 없음 | 200 |
 | POST | `/api/v1/auth/logout` | 없음 | 204 |
@@ -265,6 +282,39 @@ SDK로 받은 **OIDC ID Token**을 검증하고 바로핏 토큰을 발급한다
 | 401 | `AUTH_INVALID_ID_TOKEN` | 서명·만료·iss·aud 검증 실패. 서버에 해당 provider aud가 설정되지 않은 경우 포함 | SDK 로그인부터 다시 |
 | 503 | `AUTH_SOCIAL_PROVIDER_UNAVAILABLE` | Google·Kakao 공개키 조회 실패 | 잠시 후 재시도 |
 
+### 4.2-1 인가 코드 소셜 로그인 — `POST /api/v1/auth/social-login/code`
+앱(Expo Go)이 WebView로 카카오·구글 로그인을 하고 받은 **인가 코드**로 로그인한다. 연결된 계정이 없으면 자동으로 가입한다. **응답은 4.2와 같다.**
+
+앱이 여는 로그인 주소(공개 키만 사용):
+```
+카카오: https://kauth.kakao.com/oauth/authorize?client_id=<REST API 키>&redirect_uri=http://localhost:8081&response_type=code&state=<랜덤>&nonce=<랜덤>
+구글:  https://accounts.google.com/o/oauth2/v2/auth?client_id=<웹 클라이언트 ID>&redirect_uri=http://localhost:8081&response_type=code&scope=openid%20profile%20email&prompt=select_account&state=<랜덤>&nonce=<랜덤>
+```
+- WebView가 `redirect_uri`로 이동하려는 순간 `code`를 가로챈다(페이지를 실제로 열지 않음).
+- `state`는 앱이 확인한다(다른 곳에서 시작된 로그인 응답 거부). `nonce`는 서버가 확인한다(ID Token 재사용 방지). 둘 다 로그인 시도마다 새로 만든다.
+
+**요청**
+
+| 필드 | 타입 | 필수 | 설명 |
+|---|---|---|---|
+| `provider` | string | O | `GOOGLE` 또는 `KAKAO` |
+| `code` | string | O | redirect로 받은 인가 코드. 한 번만 쓸 수 있고 몇 분 안에 만료된다 |
+| `redirectUri` | string | O | 로그인 주소에 쓴 `redirect_uri`와 같은 값. 서버 허용 목록에 있어야 한다 |
+| `nonce` | string | O | 로그인 주소에 넣은 `nonce` |
+
+```json
+{ "provider": "KAKAO", "code": "Hp53ZOPB8EOwjmtTOAl6Oq...", "redirectUri": "http://localhost:8081", "nonce": "0b6f6c0e-..." }
+```
+
+**에러**
+
+| 상태 | code | 상황 | 앱 동작 |
+|---|---|---|---|
+| 400 | `INVALID_INPUT` | 필드 누락, 허용되지 않은 `redirectUri` | 요청 수정 |
+| 401 | `AUTH_INVALID_AUTHORIZATION_CODE` | 코드 만료·재사용, redirect_uri 불일치 | 소셜 로그인부터 다시 |
+| 401 | `AUTH_INVALID_ID_TOKEN` | ID Token 검증 실패, nonce 불일치 | 소셜 로그인부터 다시 |
+| 503 | `AUTH_SOCIAL_PROVIDER_UNAVAILABLE` | 소셜 서버 장애·타임아웃, 서버의 소셜 설정 오류 | 잠시 후 재시도 |
+
 ### 4.3 토큰 갱신 — `POST /api/v1/auth/refresh`
 - **Refresh Token은 한 번만 쓸 수 있다.** 성공하면 응답의 새 값으로 반드시 교체한다.
 - **이미 쓴 Refresh Token이 다시 오면 탈취로 보고 그 세션 전체를 폐기한다.** 새로 받은 토큰도 함께 무효가 된다. 다른 기기의 세션은 영향받지 않는다.
@@ -333,7 +383,8 @@ SDK로 받은 **OIDC ID Token**을 검증하고 바로핏 토큰을 발급한다
 | `AUTH_TOKEN_EXPIRED` | 401 | 인증 필요한 API | Access Token 만료 | **refresh 후 재시도** |
 | `AUTH_INVALID_TOKEN` | 401 | 인증 필요한 API | Access Token 없음·위조·형식 오류 | 재로그인 |
 | `AUTH_INVALID_ID_TOKEN` | 401 | social-login | 소셜 ID Token 검증 실패 | SDK 로그인부터 다시 |
-| `AUTH_SOCIAL_PROVIDER_UNAVAILABLE` | 503 | social-login | 소셜 공개키 조회 실패 | 잠시 후 재시도 |
+| `AUTH_INVALID_AUTHORIZATION_CODE` | 401 | social-login/code | 인가 코드 만료·재사용, redirect_uri 불일치 | 소셜 로그인부터 다시 |
+| `AUTH_SOCIAL_PROVIDER_UNAVAILABLE` | 503 | social-login, social-login/code | 소셜 서버 장애·타임아웃, 서버 소셜 설정 오류 | 잠시 후 재시도 |
 | `AUTH_INVALID_REFRESH` | 401 | refresh | Refresh Token 없음·만료 | 재로그인 |
 | `AUTH_SESSION_REVOKED` | 401 | refresh | 세션 폐기(재사용 탐지, 로그아웃한 토큰) | 재로그인 |
 | `AUTH_USER_WITHDRAWN` | 401 | refresh (이후 `/users/me` 조회 계열) | 탈퇴한 사용자 | 로컬 토큰 삭제 후 로그인 화면 |
@@ -343,7 +394,12 @@ SDK로 받은 **OIDC ID Token**을 검증하고 바로핏 토큰을 발급한다
 | `INTERNAL_SERVER_ERROR` | 500 | 모든 API | 서버 오류 | 잠시 후 재시도 |
 
 ### 4.8 앱 연동 가이드
-**로그인**
+**로그인 (현재 앱: Expo Go + WebView)**
+1. `state`·`nonce`를 만들고 WebView로 카카오·구글 로그인 주소를 연다(4.2-1).
+2. `redirect_uri`로 이동하려는 순간 `code`를 가로채고 `state`를 확인한다.
+3. `social-login/code`를 호출하고, 받은 토큰 세 값을 안전한 저장소에 저장한다(앱은 `expo-secure-store`).
+
+**로그인 (SDK 방식으로 바꿀 경우)**
 1. SDK로 로그인해 **ID Token**을 받는다. Kakao는 콘솔에서 OpenID Connect를 켜야 ID Token이 나온다.
 2. `social-login`을 호출하고, 받은 토큰 세 값을 안전한 저장소에 저장한다.
 3. `isOnboarded`로 온보딩 화면과 홈 화면 중 하나로 보낸다.
@@ -376,6 +432,11 @@ API 요청 → 401 AUTH_TOKEN_EXPIRED
 | `JWT_CURRENT_KID` | 현재 서명 키의 kid | 필수 |
 | `GOOGLE_CLIENT_IDS` | Google aud 허용 목록(쉼표 구분) | 비어 있음 → Google 로그인 거부 |
 | `KAKAO_APP_KEYS` | Kakao aud 허용 목록(쉼표 구분) | 비어 있음 → Kakao 로그인 거부 |
+| `SOCIAL_REDIRECT_URIS` | 인가 코드 로그인의 redirect_uri 허용 목록(쉼표 구분). 콘솔 등록값과 같아야 함 | `http://localhost:8081` |
+| `GOOGLE_WEB_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Google 인가 코드 교환(웹 클라이언트 `barofit-web`) | 비어 있음 → Google 코드 로그인 503 |
+| `KAKAO_REST_API_KEY`, `KAKAO_CLIENT_SECRET` | Kakao 인가 코드 교환(REST API 키와 클라이언트 시크릿) | 비어 있음 → Kakao 코드 로그인 503 |
+
+시크릿 두 개는 **서버 `.env`(운영은 Secret)에만** 둔다. 저장소, 앱, 문서에 넣지 않는다.
 
 애플리케이션 프로퍼티: `barofit.refresh-token.cleanup-cron`(기본 `0 0 4 * * *`), `barofit.scheduling.enabled`(테스트에서는 false).
 
@@ -396,7 +457,9 @@ API 요청 → 401 AUTH_TOKEN_EXPIRED
 | Google iOS URL 스킴 | config plugin | - |
 
 - 실제 값은 콘솔과 로컬 `.env`에서 확인한다. 이 문서에는 적지 않는다.
-- SDK 방식이라 서버에는 client secret과 Redirect URI가 필요 없다. Google 웹 클라이언트의 secret은 쓰지 않는다.
+- **현재 앱(인가 코드 방식)이 쓰는 값:** Kakao REST API 키·클라이언트 시크릿, Google 웹 클라이언트 ID·secret, 리다이렉트 URI `http://localhost:8081`(두 콘솔에 등록). 앱에는 REST API 키와 웹 클라이언트 ID만 들어간다.
+- 위 표의 네이티브 앱 키, iOS 클라이언트 ID, 패키지명·키 해시·SHA-1은 SDK 방식으로 바꿀 때 쓴다(Expo Go에서는 쓰이지 않음).
+- 서버 단독 테스트(브라우저로 code 받기)용 리다이렉트 URI `http://localhost:8765`도 두 콘솔에 등록되어 있다. 출시 전 삭제한다.
 - `aud`에 실제로 들어오는 값은 앱 설정에 따라 다르다. Google은 웹 또는 iOS 클라이언트 ID일 수 있고, Kakao는 네이티브 앱 키로 예상한다. **실제 ID Token으로 확인한 뒤** 쓰지 않는 값을 뺀다.
 - Google은 "테스트 중" 상태라 테스트 사용자로 등록한 계정만 로그인할 수 있다.
 - **출시 전 할 일:** Google 브랜딩(개인정보처리방침 URL 등) 완성과 앱 게시, release·EAS·Play 서명의 SHA-1(Google Android 클라이언트 추가)과 키 해시(Kakao) 추가, 스토어 URL·App Store ID 입력.
@@ -407,15 +470,27 @@ API 요청 → 401 AUTH_TOKEN_EXPIRED
 
 | 구분 | 테스트 | 내용 |
 |---|---|---|
-| 단위 | `AccessTokenIssuerTest`, `JwtKeysTest`, `RefreshTokenValuesTest`, `SocialIdTokenVerifierTest`, `UserTest` | 토큰 claim, 키 짝 검증, 해시, ID Token의 iss·aud·exp·서명, 닉네임·URL 길이 |
+| 단위 | `AccessTokenIssuerTest`, `JwtKeysTest`, `RefreshTokenValuesTest`, `SocialIdTokenVerifierTest`, `UserTest` | 토큰 claim, 키 짝 검증, 해시, ID Token의 iss·aud·exp·서명·nonce, 교환 client-id의 aud 허용, Kakao 사진 https 변환, 닉네임·URL 길이 |
+| 단위 | `SocialAuthorizationCodeClientTest` 8건 | 코드 교환 성공, 만료 코드(401), 잘못된 시크릿·소셜 서버 5xx·`id_token` 누락·설정 누락(503), 설정 toString의 시크릿 마스킹 |
 | 공통 | `GlobalExceptionHandlerTest`, `ErrorHandlingAutoConfigurationTest` | 에러 형식, 자동설정 중복 등록 방지 |
-| 통합(Testcontainers) | `AuthApiTest` 24건 | 가입·로그인, 동시 가입(8스레드), 회전, 재사용 탐지, 동시 refresh, 만료, logout, 탈퇴 멱등, onboarded, 사용자 단건·여러 건 조회 |
+| 통합(Testcontainers) | `AuthApiTest` 29건 | 가입·로그인, 인가 코드 가입(ID Token 방식과 같은 회원), 허용 안 된 redirectUri 400, 만료 코드 401, nonce 누락 400, 동시 가입(8스레드), 회전, 재사용 탐지, 동시 refresh, 만료, logout, 탈퇴 멱등, onboarded, 사용자 단건·여러 건 조회 |
 | 통합 | `SecurityConfigTest`, `JwksEndpointTest`, `IdentityPersistenceTest`, `BaroApplicationTests` | 만료·위조 구분, 공개 경로 헤더 무시, JWKS, 제약 조건, JwtDecoder Bean 하나 |
 | 구조 | `ArchitectureTests` 3건 | common 독립, api 패키지는 JDK만, 다른 도메인은 api 패키지만 참조 |
 
 **실제 서버로 확인한 것(임시 PostgreSQL):** 각 에러 응답 형식, refresh 회전과 재사용 탐지, logout 후 refresh 거부, 탈퇴 후 익명화·소셜 계정 삭제·토큰 폐기, 탈퇴 재호출 204, Docker 이미지 빌드.
 
-**아직 확인하지 못한 것:** 실제 Google·Kakao ID Token으로 하는 로그인. 통합 테스트는 ID Token 검증을 mock으로 바꾸고, 검증 로직은 `SocialIdTokenVerifierTest`가 테스트 키로 서명한 토큰으로 확인한다.
+`./gradlew build` 기준 전체 90건 통과.
+
+**실제 Google·Kakao로 확인한 것 (2026-10-14, 로컬 PostgreSQL):**
+- ID Token 방식(`/social-login`): 가입, 재로그인, refresh, 재사용 탐지, logout, 탈퇴, 재가입. aud 허용 목록에서 키를 빼면 거부.
+- 인가 코드 방식(`/social-login/code`), 서버 단독(redirect `http://localhost:8765`): Kakao·Google 가입, 같은 code 재사용 시 401 `AUTH_INVALID_AUTHORIZATION_CODE`, 가짜 code로 시크릿 확인(시크릿이 맞으면 401, 틀리면 503).
+- Expo Go 실기기(iPhone, WebView 모달, redirect `http://localhost:8081`): Kakao·Google 로그인 → 기존 회원으로 재로그인(회원 수 변화 없음, `last_login_at` 갱신) → 온보딩 화면 이동 → 로그아웃 시 refresh token 폐기.
+
+**확인하지 않은 것:** Android Expo Go에서의 구글 로그인(이번 범위에서 제외). Google은 WebView 로그인을 막는 정책이 있어 Android에서는 차단될 수 있다.
+
+**알려진 제한 (프론트엔드):**
+- 온보딩 저장 API가 없어 `isOnboarded`가 계속 false다. 로그인할 때마다 온보딩 화면으로 간다.
+- `GET /api/v1/users/me`가 없어 앱 재시작 시 자동 로그인을 하지 않는다.
 
 ---
 
@@ -426,3 +501,7 @@ API 요청 → 401 AUTH_TOKEN_EXPIRED
 - Linux에서 compose로 실행할 때 `keys/jwt-private.pem` 권한(600)과 컨테이너 사용자(uid 1001)가 맞지 않으면 키를 읽지 못할 수 있다.
 - 도메인 경계는 컴파일러가 아니라 테스트(`ArchitectureTests`)가 지킨다. CI에서 테스트를 반드시 실행한다.
 - 앱은 에러의 `message`가 아니라 `code`로 분기해야 한다.
+- 토큰·시크릿 유출 점검(2026-10-14): 로그에는 코드·토큰·시크릿을 남기지 않고, Refresh Token은 해시만 저장한다. 설정 객체의 `toString`은 시크릿을 가린다. Actuator는 health만 공개한다.
+- 로컬 개발은 http로 통신한다. 배포 서버는 반드시 https로 연다.
+- 앱 WebView에 카카오·구글 로그인 쿠키가 남아, 바로핏 로그아웃 후에도 같은 SNS 계정으로 바로 다시 로그인된다. 공용 기기 대응이 필요하면 WebView `incognito`를 검토한다.
+- 출시 전: 서버 단독 테스트용 리다이렉트 URI `http://localhost:8765` 삭제, Google OAuth 동의 화면 게시.

@@ -76,6 +76,7 @@ RFC 9457 Problem Details 형식에 `code` 속성을 더해 응답합니다. 앱�
 
 | API | 인증 | 설명 |
 |---|---|---|
+| `POST /api/v1/auth/social-login/code` | 없음 | `{ provider, code, redirectUri, nonce }` → social-login과 같은 응답. 앱(Expo Go)이 WebView 로그인으로 받은 인가 코드를 서버가 교환 |
 | `POST /api/v1/auth/social-login` | 없음 | `{ provider: GOOGLE\|KAKAO, idToken }` → `{ accessToken, accessTokenExpiresAt, refreshToken, isOnboarded, user }`. 신규면 가입 |
 | `POST /api/v1/auth/refresh` | 없음 | `{ refreshToken }` → `{ accessToken, accessTokenExpiresAt, refreshToken }`. 쓸 때마다 회전 |
 | `POST /api/v1/auth/logout` | 없음 | `{ refreshToken }` → 항상 204. 해당 세션만 폐기 |
