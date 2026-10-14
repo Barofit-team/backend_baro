@@ -2,9 +2,8 @@ plugins {
 	id 'java-test-fixtures'
 }
 
+// 회원·인증·사용자 프로필 도메인. 다른 도메인에 공개하는 것은 com.barofit.identity.api 패키지뿐이다(ArchUnit으로 검사)
 dependencies {
-	api project(':modules:identity-api')
-	implementation project(':modules:profile-api')
 	implementation project(':common')
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 	// 바로핏 JWT 서명(NimbusJwtEncoder), 소셜 ID Token 검증(NimbusJwtDecoder)

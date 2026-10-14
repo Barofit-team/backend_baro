@@ -25,7 +25,7 @@ import com.barofit.identity.social.SocialIdentity;
 import com.barofit.identity.token.RefreshTokenCleanupJob;
 import com.barofit.identity.token.RefreshTokenValues;
 import com.barofit.identity.user.SocialProvider;
-import com.barofit.profile.api.event.ProfileCompleted;
+import com.barofit.identity.user.UserAccountService;
 import com.jayway.jsonpath.JsonPath;
 import java.sql.Timestamp;
 import java.time.Instant;
@@ -42,7 +42,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -80,7 +79,7 @@ class AuthApiTest {
 	RefreshTokenCleanupJob cleanupJob;
 
 	@Autowired
-	ApplicationEventPublisher eventPublisher;
+	UserAccountService userAccountService;
 
 	@Autowired
 	TransactionTemplate transactionTemplate;
@@ -362,19 +361,19 @@ class AuthApiTest {
 	}
 
 	@Test
-	void 온보딩_완료_이벤트를_받으면_다음_로그인부터_isOnboarded가_true다() throws Exception {
+	void 온보딩을_완료하면_다음_로그인부터_isOnboarded가_true다() throws Exception {
 		givenKakaoUser("카카오유저");
 		UUID userId = UUID.fromString(userId(body(login())));
 
 		transactionTemplate.executeWithoutResult(
-				status -> eventPublisher.publishEvent(new ProfileCompleted(userId, Instant.now())));
+				status -> userAccountService.completeOnboarding(userId));
 
 		login().andExpect(jsonPath("$.isOnboarded").value(true));
 	}
 
 	@Test
-	void 온보딩_리스너는_트랜잭션_밖에서_호출되면_실패한다() {
-		assertThatThrownBy(() -> eventPublisher.publishEvent(new ProfileCompleted(UUID.randomUUID(), Instant.now())))
+	void 온보딩_완료는_트랜잭션_밖에서_호출되면_실패한다() {
+		assertThatThrownBy(() -> userAccountService.completeOnboarding(UUID.randomUUID()))
 				.isInstanceOf(IllegalTransactionStateException.class);
 	}
 

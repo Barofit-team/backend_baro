@@ -8,6 +8,7 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -36,6 +37,18 @@ public class UserAccountService {
 		// social_accounts를 지우므로 같은 SNS로 다시 로그인하면 신규 가입이 된다
 		socialAccountRepository.deleteAllByUserId(userId);
 		refreshTokenRepository.revokeAllByUserId(userId, now);
+		// 사용자 프로필 데이터가 생기면 같은 도메인이므로 여기서 함께 삭제한다
 		eventPublisher.publishEvent(new UserWithdrawn(userId, now));
+	}
+
+	/**
+	 * 온보딩(사용자 프로필 입력) 완료. 로그인 응답의 isOnboarded가 true가 된다.
+	 * 프로필 저장과 원자적으로 반영되도록 호출하는 쪽의 트랜잭션 안에서만 실행한다.
+	 */
+	@Transactional(propagation = Propagation.MANDATORY)
+	public void completeOnboarding(UUID userId) {
+		userRepository.findById(userId)
+				.filter(User::isActive)
+				.ifPresent(user -> user.completeOnboarding(clock.instant()));
 	}
 }
