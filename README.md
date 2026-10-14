@@ -72,6 +72,8 @@ RFC 9457 Problem Details 형식에 `code` 속성을 더해 응답합니다. 앱�
 - JPA `ddl-auto`는 `validate` 고정입니다. 스키마 변경은 마이그레이션 파일로만 합니다.
 
 ## 인증 API
+> 상세 명세, 구현 내용, MSA 전환 참고: [docs/identity-service.md](docs/identity-service.md)
+
 | API | 인증 | 설명 |
 |---|---|---|
 | `POST /api/v1/auth/social-login` | 없음 | `{ provider: GOOGLE\|KAKAO, idToken }` → `{ accessToken, accessTokenExpiresAt, refreshToken, isOnboarded, user }`. 신규면 가입 |
