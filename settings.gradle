@@ -3,6 +3,8 @@ rootProject.name = 'backend_baro'
 include 'app'
 include 'common'
 
-// 도메인 모듈 추가 시 modules/ 하위에 폴더를 만들고 아래처럼 등록
-// include 'modules:user'
+// 도메인 모듈 추가 시 modules/ 하위에 구현 모듈과 공개 계약(-api) 모듈을 만들고 아래처럼 등록
 include 'modules:identity'
+include 'modules:identity-api'
+include 'modules:profile'
+include 'modules:profile-api'

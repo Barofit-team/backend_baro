@@ -38,19 +38,41 @@ backend_baro/
 ```
 
 ### 도메인 모듈 추가 방법 (예: user)
-1. `modules/user/build.gradle` 생성
+도메인마다 구현 모듈과 공개 계약 모듈(`-api`)을 함께 만듭니다.
+
+1. `modules/user-api/build.gradle` 생성. 공개 계약 모듈은 JDK에만 의존합니다
    ```groovy
    dependencies {
-       implementation project(':common')
-       implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
    }
    ```
-2. 소스는 `modules/user/src/main/java/com/barofit/user/` 하위에 작성
-3. `settings.gradle`에 `include 'modules:user'` 추가
-4. `app/build.gradle`에 `implementation project(':modules:user')` 추가
+   소스는 `modules/user-api/src/main/java/com/barofit/user/api/` 하위에 작성합니다. 이벤트, 조회 인터페이스, DTO를 Spring·JPA 애노테이션 없는 JDK record로 둡니다.
+2. `modules/user/build.gradle` 생성
+   ```groovy
+   dependencies {
+       api project(':modules:user-api')
+       implementation project(':common')
+       implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+       // 다른 도메인이 필요하면 그 도메인의 -api 모듈에만 의존
+       // implementation project(':modules:identity-api')
+   }
+   ```
+3. 소스는 `modules/user/src/main/java/com/barofit/user/` 하위에 작성합니다. 구현 모듈 안에 `api`라는 이름의 패키지는 만들지 않습니다.
+4. `settings.gradle`에 `include 'modules:user'`, `include 'modules:user-api'` 추가
+5. `app/build.gradle`에 `implementation project(':modules:user')` 추가
 
-> 추후 서비스 분리를 위해 도메인 모듈끼리는 서로 직접 의존하지 않고 `common`에만 의존합니다.
+### 의존 규칙
+- 도메인 구현 모듈끼리의 의존은 금지합니다. 다른 도메인의 `-api` 모듈에 대한 의존만 허용합니다.
+- `-api` 모듈은 JDK에만 의존합니다. `common`도 참조하지 않습니다.
+- `common`에는 도메인 코드를 넣지 않고, 어떤 도메인 모듈에도 의존하지 않습니다. `common`의 Bean은 자동설정(`AutoConfiguration.imports`)으로 등록합니다.
+- 모듈 경계는 Gradle 멀티 모듈 구조가 컴파일 단계에서 강제하고, 그 밖의 규칙은 ArchUnit(`app`의 `ArchitectureTests`)으로 검사합니다.
+- 다른 모듈의 schema를 참조하는 FK, 네이티브 쿼리, JPQL은 쓰지 않습니다. ArchUnit이 잡지 못하므로 코드 리뷰로 지킵니다.
 
+## 에러 응답
+RFC 9457 Problem Details 형식에 `code` 속성을 더해 응답합니다. 앱은 `code`로 동작을 분기합니다.
+```json
+{ "type": "about:blank", "title": "Bad Request", "status": 400, "detail": "요청 값이 올바르지 않습니다.", "instance": "/api/v1/...", "code": "INVALID_INPUT" }
+```
+- 형식은 `common`이 정하고, 에러 코드 목록은 각 모듈이 `ErrorCode` enum으로 소유합니다.
 
 ## DB 마이그레이션
 - 모듈마다 PostgreSQL schema를 하나씩 가지며, Flyway도 모듈마다 따로 실행됩니다. Spring Boot의 Flyway 자동설정은 사용하지 않습니다.

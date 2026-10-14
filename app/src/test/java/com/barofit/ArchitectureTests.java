@@ -2,6 +2,7 @@ package com.barofit;
 
 import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAPackage;
 import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideOutsideOfPackage;
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 
 import com.tngtech.archunit.core.importer.ImportOption;
@@ -17,4 +18,10 @@ class ArchitectureTests {
 			.that().resideInAPackage("com.barofit.common..")
 			.should().dependOnClassesThat(
 					resideInAPackage("com.barofit..").and(resideOutsideOfPackage("com.barofit.common..")));
+
+	// *-api 모듈은 서비스 분리 후 언어 독립 계약으로 바뀔 수 있도록 JDK 타입만 쓴다
+	@ArchTest
+	static final ArchRule api_모듈은_JDK와_다른_api_모듈에만_의존한다 = classes()
+			.that().resideInAPackage("com.barofit.*.api..")
+			.should().onlyDependOnClassesThat().resideInAnyPackage("java..", "com.barofit.*.api..");
 }

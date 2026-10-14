@@ -1,0 +1,6 @@
+dependencies {
+	api project(':modules:profile-api')
+	implementation project(':modules:identity-api')
+	implementation project(':common')
+	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+}

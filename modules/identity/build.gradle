@@ -1,4 +1,6 @@
 dependencies {
+	api project(':modules:identity-api')
+	implementation project(':modules:profile-api')
 	implementation project(':common')
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 }
