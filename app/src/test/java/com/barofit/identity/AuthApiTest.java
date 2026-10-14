@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.then;
+import static org.mockito.Mockito.never;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -21,6 +23,7 @@ import com.barofit.identity.auth.AuthErrorCode;
 import com.barofit.identity.auth.AuthService;
 import com.barofit.identity.auth.LoginResult;
 import com.barofit.identity.auth.RefreshResult;
+import com.barofit.identity.social.SocialAuthorizationCodeClient;
 import com.barofit.identity.social.SocialIdTokenVerifier;
 import com.barofit.identity.social.SocialIdentity;
 import com.barofit.identity.token.RefreshTokenCleanupJob;
@@ -53,10 +56,7 @@ import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.transaction.IllegalTransactionStateException;
 import org.springframework.transaction.support.TransactionTemplate;
 
-/**
- * 인증 흐름 통합 테스트. 각 요청이 실제로 커밋되므로 테스트마다 identity 테이블을 비운다.
- * 소셜 ID Token 검증만 mock으로 바꾼다(검증 로직은 SocialIdTokenVerifierTest).
- */
+/** 인증 흐름 통합 테스트. 소셜 ID Token 검증만 mock */
 @IntegrationTest
 @AutoConfigureMockMvc
 @RecordApplicationEvents
@@ -90,6 +90,9 @@ class AuthApiTest {
 
 	@MockitoBean
 	SocialIdTokenVerifier socialIdTokenVerifier;
+
+	@MockitoBean
+	SocialAuthorizationCodeClient socialAuthorizationCodeClient;
 
 	@AfterEach
 	void cleanUp() {
@@ -237,7 +240,7 @@ class AuthApiTest {
 				.andExpect(status().isUnauthorized())
 				.andExpect(jsonPath("$.code").value("AUTH_SESSION_REVOKED"));
 
-		// 세션 폐기가 롤백되지 않고 커밋되었는지 확인한다
+		// 세션 폐기가 커밋됐는지 확인
 		assertThat(jdbcTemplate.queryForObject(
 				"select count(*) from identity.refresh_tokens where revoked_at is null", Integer.class)).isZero();
 		refresh(newRefresh).andExpect(jsonPath("$.code").value("AUTH_SESSION_REVOKED"));
@@ -379,6 +382,61 @@ class AuthApiTest {
 	}
 
 	@Test
+	void 인가_코드로_가입하고_토큰을_받는다() throws Exception {
+		givenKakaoCode("code-1", "id-token-1", "nonce-1", "카카오유저");
+
+		codeLogin("KAKAO", "code-1", "http://localhost:8081", "nonce-1")
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.accessToken").isNotEmpty())
+				.andExpect(jsonPath("$.refreshToken").isNotEmpty())
+				.andExpect(jsonPath("$.isOnboarded").value(false))
+				.andExpect(jsonPath("$.user.nickname").value("카카오유저"));
+
+		assertThat(count("identity.users")).isEqualTo(1);
+		assertThat(count("identity.social_accounts")).isEqualTo(1);
+	}
+
+	@Test
+	void 인가_코드_로그인과_ID_Token_로그인은_같은_소셜_계정을_같은_회원으로_본다() throws Exception {
+		givenKakaoUser("카카오유저");
+		String byIdToken = userId(body(login()));
+		givenKakaoCode("code-1", "id-token-1", "nonce-1", "카카오유저");
+
+		String byCode = userId(body(codeLogin("KAKAO", "code-1", "http://localhost:8081", "nonce-1")));
+
+		assertThat(byCode).isEqualTo(byIdToken);
+		assertThat(count("identity.users")).isEqualTo(1);
+	}
+
+	@Test
+	void 허용되지_않은_redirectUri는_코드_교환_없이_400() throws Exception {
+		codeLogin("KAKAO", "code-1", "https://evil.example/callback", "nonce-1")
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("INVALID_INPUT"));
+
+		then(socialAuthorizationCodeClient).should(never()).exchange(any(), any(), any());
+	}
+
+	@Test
+	void 만료되거나_재사용된_인가_코드는_AUTH_INVALID_AUTHORIZATION_CODE() throws Exception {
+		given(socialAuthorizationCodeClient.exchange(SocialProvider.KAKAO, "used-code", "http://localhost:8081"))
+				.willThrow(new BusinessException(AuthErrorCode.AUTH_INVALID_AUTHORIZATION_CODE));
+
+		codeLogin("KAKAO", "used-code", "http://localhost:8081", "nonce-1")
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.code").value("AUTH_INVALID_AUTHORIZATION_CODE"));
+		assertThat(count("identity.users")).isZero();
+	}
+
+	@Test
+	void 인가_코드_로그인에는_nonce가_필요하다() throws Exception {
+		mockMvc.perform(post("/api/v1/auth/social-login/code").contentType(MediaType.APPLICATION_JSON)
+						.content("{\"provider\":\"KAKAO\",\"code\":\"code-1\",\"redirectUri\":\"http://localhost:8081\"}"))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.errors[0].field").value("nonce"));
+	}
+
+	@Test
 	void 사용자_요약을_조회한다() throws Exception {
 		givenKakaoUser("카카오유저");
 		UUID userId = UUID.fromString(userId(body(login())));
@@ -415,7 +473,7 @@ class AuthApiTest {
 
 		cleanupJob.deleteSessionExpired();
 
-		// 활성 세션의 폐기된 행(재사용 탐지용)은 남는다
+		// 재사용 탐지용 폐기 행은 남는다
 		assertThat(count("identity.refresh_tokens")).isEqualTo(2);
 	}
 
@@ -428,6 +486,19 @@ class AuthApiTest {
 		given(socialIdTokenVerifier.verify(eq(SocialProvider.KAKAO), any()))
 				.willReturn(new SocialIdentity(SocialProvider.KAKAO, kakaoSub, nickname, null));
 		return UUID.fromString(userId(body(login())));
+	}
+
+	private void givenKakaoCode(String code, String idToken, String nonce, String nickname) {
+		given(socialAuthorizationCodeClient.exchange(SocialProvider.KAKAO, code, "http://localhost:8081"))
+				.willReturn(idToken);
+		given(socialIdTokenVerifier.verify(SocialProvider.KAKAO, idToken, nonce))
+				.willReturn(new SocialIdentity(SocialProvider.KAKAO, KAKAO_SUB, nickname, null));
+	}
+
+	private ResultActions codeLogin(String provider, String code, String redirectUri, String nonce) throws Exception {
+		return mockMvc.perform(post("/api/v1/auth/social-login/code").contentType(MediaType.APPLICATION_JSON)
+				.content("{\"provider\":\"%s\",\"code\":\"%s\",\"redirectUri\":\"%s\",\"nonce\":\"%s\"}"
+						.formatted(provider, code, redirectUri, nonce)));
 	}
 
 	private ResultActions login() throws Exception {

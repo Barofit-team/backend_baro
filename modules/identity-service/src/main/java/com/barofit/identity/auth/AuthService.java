@@ -1,7 +1,11 @@
 package com.barofit.identity.auth;
 
+import com.barofit.common.error.BusinessException;
+import com.barofit.common.error.CommonErrorCode;
+import com.barofit.identity.social.SocialAuthorizationCodeClient;
 import com.barofit.identity.social.SocialIdTokenVerifier;
 import com.barofit.identity.social.SocialIdentity;
+import com.barofit.identity.social.SocialLoginProperties;
 import com.barofit.identity.token.RefreshToken;
 import com.barofit.identity.token.RefreshTokenRepository;
 import com.barofit.identity.token.RefreshTokenValues;
@@ -24,23 +28,34 @@ import org.springframework.transaction.annotation.Transactional;
 public class AuthService {
 
 	private final SocialIdTokenVerifier socialIdTokenVerifier;
+	private final SocialAuthorizationCodeClient socialAuthorizationCodeClient;
+	private final SocialLoginProperties socialLoginProperties;
 	private final LoginTransactions loginTransactions;
 	private final RefreshTokenRepository refreshTokenRepository;
 	private final UserRepository userRepository;
 	private final SessionTokens sessionTokens;
 	private final Clock clock;
 
-	/**
-	 * 소셜 로그인과 가입. 트랜잭션을 열지 않는다(ID Token 검증의 네트워크 호출, 동시 가입 재조회 때문).
-	 */
+	/** 소셜 로그인·가입. 네트워크 호출이 있어 트랜잭션을 열지 않는다 */
 	public LoginResult socialLogin(SocialProvider provider, String idToken) {
-		SocialIdentity identity = socialIdTokenVerifier.verify(provider, idToken);
+		return loginOrRegister(socialIdTokenVerifier.verify(provider, idToken));
+	}
+
+	/** 인가 코드 로그인·가입. 서버가 code를 ID Token으로 교환한다 */
+	public LoginResult socialLoginWithCode(SocialProvider provider, String code, String redirectUri, String nonce) {
+		if (!socialLoginProperties.redirectUris().contains(redirectUri)) {
+			throw new BusinessException(CommonErrorCode.INVALID_INPUT, "허용되지 않은 redirectUri입니다.");
+		}
+		String idToken = socialAuthorizationCodeClient.exchange(provider, code, redirectUri);
+		return loginOrRegister(socialIdTokenVerifier.verify(provider, idToken, nonce));
+	}
+
+	private LoginResult loginOrRegister(SocialIdentity identity) {
 		return loginTransactions.loginExisting(identity)
 				.orElseGet(() -> registerOrLoginConcurrently(identity));
 	}
 
-	// 같은 신규 사용자의 요청이 동시에 들어오면 한쪽은 UNIQUE 위반이 난다.
-	// PostgreSQL은 제약 위반 후 트랜잭션을 abort 상태로 만드므로 새 트랜잭션에서 한 번만 다시 조회한다
+	// 동시 가입으로 UNIQUE 위반 시 새 트랜잭션에서 다시 조회한다
 	private LoginResult registerOrLoginConcurrently(SocialIdentity identity) {
 		try {
 			return loginTransactions.register(identity);
@@ -51,9 +66,7 @@ public class AuthService {
 		}
 	}
 
-	/**
-	 * Refresh Token 회전. 조건부 UPDATE의 영향 행 수로 판정해, 같은 토큰으로 동시에 들어온 요청 중 하나만 성공한다.
-	 */
+	/** Refresh Token 회전. 동시 요청 중 하나만 성공한다 */
 	@Transactional
 	public RefreshResult refresh(String refreshToken) {
 		Instant now = clock.instant();
@@ -61,7 +74,7 @@ public class AuthService {
 		if (refreshTokenRepository.revokeIfActive(tokenHash, now) == 1) {
 			RefreshToken previous = refreshTokenRepository.findByTokenHash(tokenHash).orElseThrow();
 			User user = userRepository.findById(previous.getUserId()).orElseThrow();
-			// 탈퇴하면 토큰이 모두 폐기되므로 실제로는 위의 UPDATE에서 걸러진다
+			// 탈퇴 시 토큰이 모두 폐기되므로 실제로는 오지 않는다
 			if (!user.isActive()) {
 				return new RefreshResult.Failure(AuthErrorCode.AUTH_USER_WITHDRAWN);
 			}
@@ -69,7 +82,7 @@ public class AuthService {
 		}
 		Optional<RefreshToken> token = refreshTokenRepository.findByTokenHash(tokenHash);
 		if (token.isPresent() && token.get().isRevoked()) {
-			// 폐기된 토큰의 재사용: 탈취 가능성이 있으므로 세션 전체를 폐기한다(logout된 토큰도 같은 규칙)
+			// 폐기된 토큰 재사용: 세션 전체 폐기
 			log.warn("Refresh token reuse detected; revoking session {}", token.get().getSessionId());
 			refreshTokenRepository.revokeSession(token.get().getSessionId(), now);
 			return new RefreshResult.Failure(AuthErrorCode.AUTH_SESSION_REVOKED);
@@ -77,9 +90,7 @@ public class AuthService {
 		return new RefreshResult.Failure(AuthErrorCode.AUTH_INVALID_REFRESH);
 	}
 
-	/**
-	 * 현재 세션 폐기. 토큰 존재 여부를 노출하지 않기 위해 결과와 상관없이 성공으로 끝난다.
-	 */
+	/** 세션 폐기. 토큰 존재 여부와 상관없이 성공 */
 	@Transactional
 	public void logout(String refreshToken) {
 		refreshTokenRepository.findByTokenHash(RefreshTokenValues.hash(refreshToken))

@@ -69,6 +69,48 @@ class SocialIdTokenVerifierTest {
 	}
 
 	@Test
+	void 카카오_http_프로필_사진은_https로_바꾼다() {
+		String token = sign(claims -> claims.issuer("https://kauth.kakao.com").audience(List.of(KAKAO_APP_KEY))
+				.claim("picture", "http://img1.kakaocdn.net/thumb/R110x110.q70/?fname=default_profile.jpeg"));
+
+		assertThat(verifier.verify(SocialProvider.KAKAO, token).profileImageUrl())
+				.isEqualTo("https://img1.kakaocdn.net/thumb/R110x110.q70/?fname=default_profile.jpeg");
+	}
+
+	@Test
+	void 인가_코드_로그인은_nonce가_같으면_통과한다() {
+		String token = sign(claims -> claims.issuer("https://kauth.kakao.com").audience(List.of(KAKAO_APP_KEY))
+				.claim("nonce", "nonce-123"));
+
+		assertThat(verifier.verify(SocialProvider.KAKAO, token, "nonce-123").subject()).isEqualTo("provider-sub");
+	}
+
+	@Test
+	void 인가_코드_로그인은_nonce가_다르거나_없으면_거부한다() {
+		String withOtherNonce = sign(claims -> claims.issuer("https://kauth.kakao.com")
+				.audience(List.of(KAKAO_APP_KEY)).claim("nonce", "other"));
+		String withoutNonce = sign(claims -> claims.issuer("https://kauth.kakao.com").audience(List.of(KAKAO_APP_KEY)));
+
+		for (String token : List.of(withOtherNonce, withoutNonce)) {
+			assertThatThrownBy(() -> verifier.verify(SocialProvider.KAKAO, token, "nonce-123"))
+					.isInstanceOfSatisfying(BusinessException.class,
+							e -> assertThat(e.getErrorCode()).isEqualTo(AuthErrorCode.AUTH_INVALID_ID_TOKEN));
+		}
+	}
+
+	@Test
+	void 인가_코드_교환에_쓰는_client_id는_aud로_자동_허용한다() {
+		var kakao = new SocialLoginProperties.Provider("https://kakao.test/jwks", List.of("native-key"),
+				"https://kakao.test/token", "rest-api-key", "secret");
+		var unconfigured = new SocialLoginProperties.Provider("https://kakao.test/jwks", List.of(" "), null, "", null);
+
+		assertThat(kakao.acceptedAudiences()).containsExactlyInAnyOrder("native-key", "rest-api-key");
+		assertThat(kakao.codeExchangeConfigured()).isTrue();
+		assertThat(unconfigured.acceptedAudiences()).isEmpty();
+		assertThat(unconfigured.codeExchangeConfigured()).isFalse();
+	}
+
+	@Test
 	void 만료된_토큰은_거부한다() {
 		String token = sign(claims -> claims.issuer("https://kauth.kakao.com").audience(List.of(KAKAO_APP_KEY))
 				.issuedAt(NOW.minus(Duration.ofHours(2))).expiresAt(NOW.minus(Duration.ofMinutes(2))));

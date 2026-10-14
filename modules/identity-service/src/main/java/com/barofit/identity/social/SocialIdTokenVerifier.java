@@ -28,11 +28,7 @@ import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 
-/**
- * 앱이 SDK로 받은 소셜 ID Token(OIDC)을 검증한다.
- * provider별 디코더는 @Bean으로 등록하지 않는다. Bean으로 두면 Resource Server가 바로핏 JWT 검증에 잘못 쓸 수 있다.
- * nonce는 MVP에서 검증하지 않는다(탈취된 ID Token 재사용은 막지 못함을 감수).
- */
+/** 소셜 ID Token(OIDC) 검증. 디코더는 Bean으로 등록하지 않는다 */
 @Slf4j
 @Component
 public class SocialIdTokenVerifier {
@@ -40,6 +36,7 @@ public class SocialIdTokenVerifier {
 	static final Set<String> GOOGLE_ISSUERS = Set.of("accounts.google.com", "https://accounts.google.com");
 	static final Set<String> KAKAO_ISSUERS = Set.of("https://kauth.kakao.com");
 
+	private static final String NONCE_CLAIM = "nonce";
 	private static final Duration CLOCK_SKEW = Duration.ofSeconds(60);
 	private static final Duration JWKS_CONNECT_TIMEOUT = Duration.ofSeconds(3);
 	private static final Duration JWKS_READ_TIMEOUT = Duration.ofSeconds(5);
@@ -56,12 +53,26 @@ public class SocialIdTokenVerifier {
 		warnIfUnconfigured(SocialProvider.KAKAO, properties.kakao());
 	}
 
-	// 테스트용: provider별 디코더를 직접 주입한다
+	// 테스트용 디코더 주입
 	SocialIdTokenVerifier(Map<SocialProvider, JwtDecoder> decoders) {
 		this.decoders = new EnumMap<>(decoders);
 	}
 
 	public SocialIdentity verify(SocialProvider provider, String idToken) {
+		return toIdentity(provider, decode(provider, idToken));
+	}
+
+	/** 인가 코드 로그인용. nonce까지 확인한다 */
+	public SocialIdentity verify(SocialProvider provider, String idToken, String expectedNonce) {
+		Jwt jwt = decode(provider, idToken);
+		if (expectedNonce == null || !expectedNonce.equals(jwt.getClaimAsString(NONCE_CLAIM))) {
+			log.info("Rejected {} ID token: nonce mismatch", provider);
+			throw new BusinessException(AuthErrorCode.AUTH_INVALID_ID_TOKEN);
+		}
+		return toIdentity(provider, jwt);
+	}
+
+	private Jwt decode(SocialProvider provider, String idToken) {
 		Jwt jwt;
 		try {
 			jwt = decoders.get(provider).decode(idToken);
@@ -69,16 +80,25 @@ public class SocialIdTokenVerifier {
 			log.info("Rejected {} ID token: {}", provider, e.getMessage());
 			throw new BusinessException(AuthErrorCode.AUTH_INVALID_ID_TOKEN);
 		} catch (JwtException e) {
-			// 서명·claim 문제가 아닌 실패(공개키 조회 실패 등)
+			// 공개키 조회 실패 등
 			log.warn("Failed to verify {} ID token", provider, e);
 			throw new BusinessException(AuthErrorCode.AUTH_SOCIAL_PROVIDER_UNAVAILABLE);
 		}
+		return jwt;
+	}
+
+	private static SocialIdentity toIdentity(SocialProvider provider, Jwt jwt) {
 		return switch (provider) {
 			case GOOGLE -> new SocialIdentity(provider, jwt.getSubject(),
 					jwt.getClaimAsString("name"), jwt.getClaimAsString("picture"));
+			// 카카오 기본 사진은 http라 https로 바꾼다
 			case KAKAO -> new SocialIdentity(provider, jwt.getSubject(),
-					jwt.getClaimAsString("nickname"), jwt.getClaimAsString("picture"));
+					jwt.getClaimAsString("nickname"), toHttps(jwt.getClaimAsString("picture")));
 		};
+	}
+
+	private static String toHttps(String url) {
+		return url != null && url.startsWith("http://") ? "https://" + url.substring("http://".length()) : url;
 	}
 
 	static JwtDecoder decoder(JWKSource<SecurityContext> jwkSource, Set<String> issuers, Collection<String> audiences,
@@ -88,7 +108,7 @@ public class SocialIdTokenVerifier {
 		return decoder;
 	}
 
-	// 검증기를 직접 조합하므로 timestamp 검증기를 빠뜨리면 exp 검증이 사라진다
+	// timestamp 검증기를 빼면 exp 검증이 사라진다
 	private static OAuth2TokenValidator<Jwt> validator(Set<String> issuers, Collection<String> audiences, Clock clock) {
 		JwtTimestampValidator timestamp = new JwtTimestampValidator(CLOCK_SKEW);
 		timestamp.setAllowEmptyExpiryClaim(false);
@@ -107,7 +127,7 @@ public class SocialIdTokenVerifier {
 		NimbusJwtDecoder decoder = NimbusJwtDecoder.withJwkSetUri(provider.jwkSetUri())
 				.restOperations(restTemplate)
 				.build();
-		decoder.setJwtValidator(validator(issuers, provider.audiences(), clock));
+		decoder.setJwtValidator(validator(issuers, provider.acceptedAudiences(), clock));
 		return decoder;
 	}
 
@@ -119,7 +139,7 @@ public class SocialIdTokenVerifier {
 	}
 
 	private static void warnIfUnconfigured(SocialProvider provider, SocialLoginProperties.Provider properties) {
-		if (properties.audiences().isEmpty()) {
+		if (properties.acceptedAudiences().isEmpty()) {
 			log.warn("{} 로그인의 aud 허용 목록이 비어 있어 모든 {} ID Token을 거부합니다", provider, provider);
 		}
 	}

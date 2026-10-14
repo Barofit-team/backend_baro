@@ -18,6 +18,14 @@ final class AuthDtos {
 	record SocialLoginRequest(@NotNull SocialProvider provider, @NotBlank String idToken) {
 	}
 
+	/** redirectUri·nonce는 로그인 요청에 쓴 값 */
+	record SocialCodeLoginRequest(
+			@NotNull SocialProvider provider,
+			@NotBlank String code,
+			@NotBlank String redirectUri,
+			@NotBlank String nonce) {
+	}
+
 	record RefreshRequest(@NotBlank String refreshToken) {
 	}
 
