@@ -4,6 +4,7 @@ plugins {
 
 dependencies {
 	implementation project(':common')
+	implementation project(':modules:analytics')
 	// 도메인 모듈 추가 시 등록
 	// implementation project(':modules:user')
 

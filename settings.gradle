@@ -5,3 +5,5 @@ include 'common'
 
 // 도메인 모듈 추가 시 modules/ 하위에 폴더를 만들고 아래처럼 등록
 // include 'modules:user'
+
+include 'modules:analytics'
