@@ -9,3 +9,8 @@ dependencies {
     testRuntimeOnly 'com.h2database:h2'
     testRuntimeOnly 'org.postgresql:postgresql'
 }
+
+// Preserve Java parameter names for Spring MVC
+tasks.withType(JavaCompile).configureEach {
+    options.compilerArgs += ['-parameters']
+}
