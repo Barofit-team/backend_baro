@@ -1,7 +1,6 @@
 
 package com.barofit.analytics.service;
 
-import com.barofit.analytics.entity.WorkoutRecordView;
 import com.barofit.analytics.repository.CalendarEntryRepository;
 import com.barofit.analytics.repository.DailyStatisticRepository;
 import com.barofit.analytics.repository.WorkoutRecordViewRepository;
@@ -44,7 +43,6 @@ public class WorkoutCompletionService {
             int durationSeconds,
             int totalReps
     ) {
-        // 1. 필수 입력값 검증
         Objects.requireNonNull(
                 sessionId, "Session ID is required"
         );
@@ -61,18 +59,8 @@ public class WorkoutCompletionService {
             );
         }
 
-        // 2. 이미 처리된 운동 세션이면 중복 집계하지 않음
-        if (workoutRepository.existsById(sessionId)) {
-            return;
-        }
-
-        // 3. 한국 시간 기준 운동 날짜 계산
-        LocalDate workoutDate = completedAt
-                .atZoneSameInstant(WORKOUT_ZONE)
-                .toLocalDate();
-
-        // 4. 운동 완료 기록 저장
-        WorkoutRecordView workout = new WorkoutRecordView(
+        // PostgreSQL이 세션 중복 여부를 원자적으로 판단
+        int insertedRows = workoutRepository.insertIfAbsent(
                 sessionId,
                 userId,
                 routineId,
@@ -81,9 +69,23 @@ public class WorkoutCompletionService {
                 totalReps
         );
 
-        workoutRepository.saveAndFlush(workout);
+        // 이미 저장된 세션이면 통계를 다시 집계하지 않음
+        if (insertedRows == 0) {
+            return;
+        }
 
-        // 5. 일별 통계 원자적 증가
+        if (insertedRows != 1) {
+            throw new IllegalStateException(
+                    "Unexpected workout insert result: " + insertedRows
+            );
+        }
+
+        // 한국 시간 기준 운동 날짜
+        LocalDate workoutDate = completedAt
+                .atZoneSameInstant(WORKOUT_ZONE)
+                .toLocalDate();
+
+        // 일별 통계 원자적 갱신
         dailyRepository.incrementWorkoutStatistics(
                 userId,
                 workoutDate,
@@ -91,7 +93,7 @@ public class WorkoutCompletionService {
                 totalReps
         );
 
-        // 6. 캘린더 통계 원자적 증가
+        // 운동 캘린더 원자적 갱신
         calendarRepository.incrementCalendarEntry(
                 userId,
                 workoutDate,
