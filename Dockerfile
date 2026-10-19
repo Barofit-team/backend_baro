@@ -14,6 +14,6 @@ FROM eclipse-temurin:21-jre
 WORKDIR /app
 RUN useradd --system --uid 1001 barofit
 COPY --from=build /workspace/service.jar app.jar
-USER barofit
+COPY --chmod=755 scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 EXPOSE 8080
-ENTRYPOINT ["java", "-jar", "/app/app.jar"]
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]

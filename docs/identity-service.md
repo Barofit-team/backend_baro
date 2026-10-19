@@ -492,7 +492,7 @@ API 요청 → 401 AUTH_TOKEN_EXPIRED
 - 동시 가입이 충돌하면 PostgreSQL·Hibernate가 `duplicate key` ERROR 로그를 남긴다. 정상 처리 과정이므로 로그 알림 규칙에서 제외해야 할 수 있다.
 - 탈퇴·로그아웃 후에도 이미 발급된 Access Token은 최대 15분 유효하다.
 - 정리 배치는 인스턴스마다 실행된다. 삭제가 멱등이라 문제는 없지만, replica가 2개 이상이면 ShedLock 같은 중복 실행 방지를 검토한다.
-- Linux에서 compose로 실행할 때 `keys/jwt-private.pem` 권한(600)과 컨테이너 사용자(uid 1001)가 맞지 않으면 키를 읽지 못할 수 있다.
+- Compose 실행 시 시작 스크립트가 읽기 전용으로 마운트된 `keys/jwt-private.pem`을 컨테이너 내부에 복사하고 앱 사용자(uid 1001)에게만 읽기 권한을 준다.
 - 도메인 경계는 컴파일러가 아니라 테스트(`ArchitectureTests`)가 지킨다. CI에서 테스트를 반드시 실행한다.
 - 앱은 에러의 `message`가 아니라 `code`로 분기해야 한다.
 - 토큰·시크릿 유출 점검(2026-10-14): 로그에는 코드·토큰·시크릿을 남기지 않고, Refresh Token은 해시만 저장한다. 설정 객체의 `toString`은 시크릿을 가린다. Actuator는 health만 공개한다.

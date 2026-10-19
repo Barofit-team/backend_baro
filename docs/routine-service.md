@@ -198,7 +198,7 @@ GET /api/v1/routine-templates?category=FULL_BODY&difficulty=BEGINNER
 - 웹 테스트 시 백엔드 `CORS_ALLOWED_ORIGINS=http://localhost:8081`을 지정한다. 여러 origin은 쉼표로 구분한다. 네이티브 앱은 CORS 대상이 아니다.
 - 휴대폰에서는 localhost 대신 개발 PC의 LAN IP를 사용하고 같은 Wi-Fi에 연결한다.
 - Docker DB 공개 포트는 `DB_PORT`로 지정하며 localhost에만 바인딩된다. 컨테이너 간 DB 통신은 계속 postgres:5432를 사용한다.
-- JWT 키 파일 권한이 600이면 로컬 `.env`의 `APP_UID`, `APP_GID`를 `id -u`, `id -g` 결과로 맞춘다. 운영에서는 마운트 키의 소유권을 실행 사용자에 맞춘다.
+- Docker에서는 시작 스크립트가 마운트된 JWT 키를 컨테이너 내부로 복사해 앱 실행 사용자에게 읽기 권한을 부여한다. 호스트의 `APP_UID`, `APP_GID` 설정은 필요하지 않다.
 - `.env`와 JWT 키는 Git에 포함하지 않는다. Expo에는 공개 client ID와 redirect URI만 넣고 client secret/private key는 넣지 않는다.
 
 ### 실기기 인수 확인 순서
