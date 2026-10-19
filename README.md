@@ -1,6 +1,6 @@
 # barofit-backend
 
-운동 보조 앱 **barofit**의 백엔드. 추후 서비스별로 레포를 분리할 예정이라, 지금은 하나의 레포 안에서 **모듈형 모놀리스**(Gradle 멀티 모듈) 구조로 개발합니다.
+운동 보조 앱 **barofit**의 백엔드. 하나의 저장소에서 인증과 루틴을 각각 독립 Spring Boot 애플리케이션·컨테이너로 빌드합니다. PostgreSQL은 하나를 공유하고 `identity`, `routine` 스키마로 논리적으로 분리합니다.
 
 ## 커밋 컨벤셜
 - feat: 새로운 기능 개발
@@ -28,13 +28,15 @@ feat(#이슈번호): 로그인 기능 개발
 ## 폴더 구조
 ```
 backend_baro/
-├─ app/         # 실행 모듈 (@SpringBootApplication, application.yaml) - 모든 모듈을 조립해 실행 jar 생성
-├─ common/      # 모듈 전반에서 쓰는 공용 예외/응답/필터/설정
-├─ modules/     # 도메인별 모듈. 도메인 하나에 {도메인}-service 모듈 하나 (현재 identity-service)
-├─ build.gradle     # 모든 모듈 공통 설정
-├─ settings.gradle  # 모듈 등록
-├─ compose.yaml     # app + postgres. postgres 이미지 태그의 기준(테스트도 같은 태그 사용)
-└─ Dockerfile       # app 모듈(모놀리스) 이미지
+├─ identity-app/    # 인증 서비스 실행 앱 → identity-service 컨테이너
+├─ routine-app/     # 루틴 서비스 실행 앱 → routine-service 컨테이너
+├─ service-runtime/ # 공용 JWT 검증·Clock·Flyway 실행 코드 (도메인 의존 없음)
+├─ app/             # 두 도메인의 기존 회귀 테스트 전용 (배포/bootRun 비활성)
+├─ common/          # 공용 오류 응답·스키마 등록 계약
+├─ modules/         # identity-service, routine 도메인 구현
+├─ deploy/          # Nginx 게이트웨이 라우팅
+├─ compose.yaml     # gateway + identity-service + routine-service + postgres
+└─ Dockerfile       # SERVICE_MODULE 인자로 실행 앱 선택
 ```
 
 ### 도메인 모듈 추가 방법 (예: workout)
@@ -45,8 +47,7 @@ backend_baro/
    dependencies {
        implementation project(':common')
        implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
-       // 다른 도메인이 필요하면 그 모듈에 의존하되, 코드에서는 그 도메인의 api 패키지만 참조합니다
-       // implementation project(':modules:identity-service')
+       // 다른 서비스 구현 모듈은 의존하지 않습니다. 서비스 간 호출은 HTTP/이벤트 계약으로 연결합니다.
    }
    ```
 2. 소스는 `com.barofit.workout` 패키지 하위에 작성합니다.
@@ -56,7 +57,7 @@ backend_baro/
    └─ ...       # 내부 구현: 엔티티, 리포지토리, 서비스, 컨트롤러
    ```
 3. `settings.gradle`에 `include 'modules:workout-service'` 추가
-4. `app/build.gradle`에 `implementation project(':modules:workout-service')` 추가
+4. `workout-app` 실행 모듈을 만들고 `service-runtime`과 자기 도메인 모듈에만 의존합니다. Compose 서비스와 게이트웨이 경로를 추가합니다.
 
 
 ## 에러 응답
@@ -99,26 +100,63 @@ RFC 9457 Problem Details 형식에 `code` 속성을 더해 응답합니다. 앱�
 - 로컬: `./scripts/generate-jwt-keys.sh`로 `keys/`(gitignore)에 생성하고, 출력된 값을 `.env`에 넣습니다.
 - Docker: `keys/`를 컨테이너에 읽기 전용으로 마운트합니다(`compose.yaml`).
 - 테스트: 메모리에서 키를 생성합니다(`TestJwtKeyFiles`).
-- 앱이 시작할 때 개인키와 현재 kid의 공개키가 짝인지 검증하고, 아니면 기동하지 않습니다.
+- 인증 앱은 시작할 때 개인키와 현재 kid의 공개키가 짝인지 검증합니다. 루틴 앱에는 공개 JWKS만 마운트하며 인증 서비스와 통신하지 않고 JWT 서명을 검증합니다. 파일 기반 공개 키를 교체하면 각 서비스를 재시작해야 합니다.
 
 ## 실행
 ```bash
 ./scripts/generate-jwt-keys.sh  # 최초 1회. 출력된 JWT_* 값을 .env에 설정
 
-# Docker로 app + postgres 실행
-docker compose up -d --build   # http://localhost:3002
+# Docker로 독립 서비스 + gateway + postgres 실행
+docker compose up -d --build --remove-orphans   # 외부 API: PORT (기본 3002)
 
-# 로컬에서 app만 실행 (postgres는 compose로 띄우거나 로컬 설치본 사용)
+# JVM으로 따로 실행할 경우 (각각 별도 터미널)
 cp .env.example .env    # 프로젝트 root 위치에서 터미널 명령어 실행
 docker compose up -d postgres
-./gradlew :app:bootRun  # http://localhost:3002
+./gradlew :identity-app:bootRun  # 기본 3004
+./gradlew :routine-app:bootRun   # 기본 3005
 ```
 > 접속 정보는 `.env`에서 수정합니다.
 
 ## 테스트 / 빌드
 ```bash
 ./gradlew test    # 테스트 (Docker 필요)
-./gradlew build   # 빌드 (app/build/libs/app-0.0.1-SNAPSHOT.jar)
+./gradlew build   # identity-app/build/libs/app.jar, routine-app/build/libs/app.jar
 ```
 > DB가 필요한 테스트는 Testcontainers로 PostgreSQL을 띄우므로 **로컬과 CI 모두 Docker가 필요합니다.**
 > 이미지 태그는 Gradle이 `compose.yaml`에서 읽어 넘기므로, IDE에서도 Gradle 테스트 러너로 실행해야 합니다.
+
+
+## Routine Service
+
+운동 3종(푸시업·스쿼트·플랭크), 가이드/TTS 원문, 템플릿 기반 사용자 루틴 CRUD, 난이도별 기본 템플릿 9개를 제공합니다. 사용자는 종목별 세트 수·반복 횟수·유지 시간만 조절할 수 있습니다. `routine` 스키마는 `ModuleSchema`로 등록하여 identity와 별도로 마이그레이션합니다.
+
+- Swagger UI: http://localhost:3002/swagger-ui.html
+- OpenAPI: http://localhost:3002/v3/api-docs
+- Swagger의 Authorize에 소셜 로그인 응답의 `accessToken`을 입력합니다.
+- 운동·템플릿 조회는 공개이며 사용자 루틴은 JWT 인증이 필요합니다.
+- [Routine 설계·인증·프론트 연동 안내](docs/routine-service.md)
+
+## 서비스 실행 경계
+
+| 서비스 | 외부 직접 포트(기본, localhost만) | 소유 스키마 | 도메인 의존 |
+|---|---|---|---|
+| identity-service | 3004 | identity | identity-service만 |
+| routine-service | 3005 | routine | routine만 |
+| gateway | PORT(기본 3002, LAN 접근 가능) | 없음 | HTTP 라우팅 |
+
+게이트웨이는 `/api/v1/auth/**`, `/api/v1/users/**`, `/.well-known/jwks.json`을 인증 서비스로, 운동·루틴 API를 루틴 서비스로 전달합니다. 프론트 `EXPO_PUBLIC_API_URL`은 게이트웨이 주소 하나를 사용합니다. 현재 로컬 `.env`는 PORT=3003입니다.
+
+Swagger는 게이트웨이 `/swagger-ui.html`에서 Routine Service / Identity Service를 선택합니다. 원본 명세는 `/v3/api-docs`, `/identity/v3/api-docs`입니다. 직접 포트의 `/actuator/health`로 각 서비스 상태를 확인합니다. 게이트웨이 `/health`는 프록시 자체의 생존 상태만 나타냅니다.
+
+각 서비스는 자기 도메인의 엔티티·리포지토리·Flyway 파일만 포함하며 자기 스키마만 마이그레이션합니다. 기존 DB 볼륨 및 migration 이력은 유지됩니다. 현재 DB 접속 계정은 공유하므로 DB 권한으로 접근을 차단한 구조는 아니며, 서비스 코드에서 다른 스키마를 조회하거나 FK를 만들지 않습니다.
+
+기존 Spring 이벤트(`UserWithdrawn` 등)는 프로세스 내부 이벤트입니다. 다른 서비스로의 탈퇴 전파/루틴 정리가 필요하면 HTTP 또는 메시지 이벤트 연동을 추가해야 합니다. 현재 즉시 토큰 폐기나 루틴 데이터 삭제 전파는 구현되어 있지 않습니다.
+
+독립 서비스 검증(로컬 개발 키만 사용):
+
+```bash
+./gradlew :identity-app:verifyServiceIsolation :routine-app:verifyServiceIsolation
+SMOKE_BASE_URL=http://localhost:3003 node scripts/verify-services.cjs
+```
+
+스크립트는 분리된 Swagger/라우팅, 인증 거부, JWT 루틴 CRUD·소유권을 확인하고 생성한 테스트 루틴을 삭제합니다. 실제 소셜 로그인은 별도 실기기 확인이 필요합니다. 직접 서비스 포트를 바꾼 경우 `SMOKE_IDENTITY_URL`, `SMOKE_ROUTINE_URL`도 지정합니다.

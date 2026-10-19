@@ -11,6 +11,8 @@ keys/
 # Environment variables
 .env
 .env.*
+.[eE][nN][vV]
+.[eE][nN][vV].*
 !.env.example
 
 # Logs

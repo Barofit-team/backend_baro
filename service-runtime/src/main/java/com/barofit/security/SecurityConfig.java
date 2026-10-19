@@ -1,7 +1,10 @@
 package com.barofit.security;
 
-import com.barofit.identity.api.BarofitTokenClaims;
-import com.barofit.identity.api.IdentityPublicPaths;
+
+
+
+import org.springframework.http.HttpMethod;
+import java.util.ArrayList;
 import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.source.ImmutableJWKSet;
 import java.io.IOException;
@@ -37,22 +40,29 @@ import org.springframework.web.servlet.HandlerExceptionResolver;
 @Configuration(proxyBeanMethods = false)
 class SecurityConfig {
 
+	private static final String[] AUTH_PUBLIC_PATHS = {"/api/v1/auth/**", "/.well-known/jwks.json"};
+    private static final String[] ROUTINE_PUBLIC_PATHS = {"/api/v1/exercises", "/api/v1/exercises/*", "/api/v1/routine-templates"};
+
 	private static final Duration CLOCK_SKEW = Duration.ofSeconds(60);
 
 	private static final String[] INFRA_PUBLIC_PATHS = {"/actuator/health", "/actuator/health/**", "/error"};
+    private static final String[] DOCS_PUBLIC_PATHS = {"/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs", "/v3/api-docs/**"};
 
 	@Bean
 	SecurityFilterChain securityFilterChain(HttpSecurity http, JwtDecoder barofitJwtDecoder,
 			AuthenticationEntryPoint authenticationEntryPoint) throws Exception {
 		http
+				.cors(cors -> {})
 				.csrf(csrf -> csrf.disable())
 				.httpBasic(basic -> basic.disable())
 				.formLogin(form -> form.disable())
 				.logout(logout -> logout.disable())
 				.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 				.authorizeHttpRequests(authorize -> authorize
-						.requestMatchers(IdentityPublicPaths.ALL).permitAll()
+						.requestMatchers(AUTH_PUBLIC_PATHS).permitAll()
 						.requestMatchers(INFRA_PUBLIC_PATHS).permitAll()
+                        .requestMatchers(HttpMethod.GET, ROUTINE_PUBLIC_PATHS).permitAll()
+                        .requestMatchers(HttpMethod.GET, DOCS_PUBLIC_PATHS).permitAll()
 						.anyRequest().authenticated())
 				.oauth2ResourceServer(resourceServer -> resourceServer
 						.jwt(jwt -> jwt
@@ -65,6 +75,20 @@ class SecurityConfig {
 	}
 
 	@Bean
+	org.springframework.web.cors.CorsConfigurationSource corsConfigurationSource(
+			@Value("${barofit.cors.allowed-origins:}") String origins) {
+		var configuration = new org.springframework.web.cors.CorsConfiguration();
+		configuration.setAllowedOrigins(Arrays.stream(origins.split(","))
+				.map(String::trim).filter(origin -> !origin.isEmpty()).toList());
+		configuration.setAllowedMethods(List.of("GET", "POST", "PATCH", "DELETE", "OPTIONS"));
+		configuration.setAllowedHeaders(List.of("Authorization", "Content-Type"));
+		configuration.setExposedHeaders(List.of("Location"));
+		var source = new org.springframework.web.cors.UrlBasedCorsConfigurationSource();
+		source.registerCorsConfiguration("/api/**", configuration);
+		return source;
+	}
+
+	@Bean
 	JwtDecoder barofitJwtDecoder(@Value("${barofit.jwt.public-jwks-path}") String publicJwksPath, Clock clock)
 			throws IOException, ParseException {
 		// 키 교체를 위해 JWK Set 사용
@@ -72,8 +96,8 @@ class SecurityConfig {
 		NimbusJwtDecoder decoder = NimbusJwtDecoder.withJwkSource(new ImmutableJWKSet<>(jwks)).build();
 		decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
 				new AccessTokenTimestampValidator(CLOCK_SKEW, clock),
-				new JwtIssuerValidator(BarofitTokenClaims.ISSUER),
-				new JwtAudienceValidator(BarofitTokenClaims.AUDIENCE)));
+				new JwtIssuerValidator("barofit-identity"),
+				new JwtAudienceValidator("barofit-api")));
 		return decoder;
 	}
 
@@ -86,16 +110,22 @@ class SecurityConfig {
 	/** 공개 경로에서는 Bearer 헤더를 무시한다(만료 토큰으로 refresh 호출 허용) */
 	static BearerTokenResolver bearerTokenResolver() {
 		DefaultBearerTokenResolver delegate = new DefaultBearerTokenResolver();
-		List<RequestMatcher> matchers = Arrays.stream(IdentityPublicPaths.ALL)
+		List<RequestMatcher> matchers = new ArrayList<>(Arrays.stream(AUTH_PUBLIC_PATHS)
 				.<RequestMatcher>map(path -> PathPatternRequestMatcher.withDefaults().matcher(path))
-				.toList();
+				.toList());
+        for (String path : ROUTINE_PUBLIC_PATHS) {
+            matchers.add(PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.GET, path));
+        }
+        for (String path : DOCS_PUBLIC_PATHS) {
+            matchers.add(PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.GET, path));
+        }
 		RequestMatcher publicPaths = new OrRequestMatcher(matchers);
 		return request -> publicPaths.matches(request) ? null : delegate.resolve(request);
 	}
 
 	private static JwtAuthenticationConverter jwtAuthenticationConverter() {
 		JwtGrantedAuthoritiesConverter authorities = new JwtGrantedAuthoritiesConverter();
-		authorities.setAuthoritiesClaimName(BarofitTokenClaims.ROLE);
+		authorities.setAuthoritiesClaimName("role");
 		authorities.setAuthorityPrefix("ROLE_");
 		JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
 		converter.setJwtGrantedAuthoritiesConverter(authorities);

@@ -14,6 +14,8 @@ spring:
       ddl-auto: validate
 
 barofit:
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:}
   jwt:
     # 키 파일은 커밋 금지(scripts/generate-jwt-keys.sh)
     private-key-path: ${JWT_PRIVATE_KEY_PATH:}
@@ -38,3 +40,9 @@ barofit:
 
 server:
   port: ${PORT:3002}
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: method

@@ -3,7 +3,9 @@ plugins {
 }
 
 dependencies {
-	implementation project(':common')
+	implementation project(':service-runtime')
+	implementation project(':modules:routine')
+	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.1.1'
 	// 도메인 모듈 추가 시 등록
 	implementation project(':modules:identity-service')
 
@@ -33,3 +35,7 @@ dependencies {
 tasks.named('bootRun') {
 	workingDir = rootProject.projectDir
 }
+
+// 도메인 간 회귀 테스트 전용. 배포는 identity-app / routine-app에서 수행한다.
+tasks.named('bootJar') { enabled = false }
+tasks.named('bootRun') { enabled = false }
