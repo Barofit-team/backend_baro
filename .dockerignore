@@ -9,3 +9,9 @@
 .[eE][nN][vV].*
 *.log
 keys
+*.pem
+*.key
+*.p8
+*.p12
+*.jks
+*.keystore

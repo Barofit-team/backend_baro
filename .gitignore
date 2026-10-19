@@ -7,6 +7,12 @@ build/
 
 # JWT 키 (어떤 환경에서도 커밋하지 않는다)
 keys/
+*.pem
+*.key
+*.p8
+*.p12
+*.jks
+*.keystore
 
 # Environment variables
 .env
