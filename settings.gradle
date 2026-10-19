@@ -3,3 +3,5 @@ rootProject.name = 'backend_baro'
 include 'shared:common', 'shared:runtime'
 include 'services:identity', 'services:routine'
 include 'integration-tests'
+
+include 'services:analytics'
