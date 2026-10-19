@@ -26,38 +26,29 @@ feat(#이슈번호): 로그인 기능 개발
 - JUnit 5 (테스트)
 
 ## 폴더 구조
-```
+
+```text
 backend_baro/
-├─ identity-app/    # 인증 서비스 실행 앱 → identity-service 컨테이너
-├─ routine-app/     # 루틴 서비스 실행 앱 → routine-service 컨테이너
-├─ service-runtime/ # 공용 JWT 검증·Clock·Flyway 실행 코드 (도메인 의존 없음)
-├─ app/             # 두 도메인의 기존 회귀 테스트 전용 (배포/bootRun 비활성)
-├─ common/          # 공용 오류 응답·스키마 등록 계약
-├─ modules/         # identity-service, routine 도메인 구현
-├─ deploy/          # Nginx 게이트웨이 라우팅
-├─ compose.yaml     # gateway + identity-service + routine-service + postgres
-└─ Dockerfile       # SERVICE_MODULE 인자로 실행 앱 선택
+├─ services/
+│  ├─ identity/         # 인증: 실행 앱, API, 도메인, DB 마이그레이션, 단위 테스트
+│  └─ routine/          # 루틴: 실행 앱, API, 도메인, DB 마이그레이션
+├─ shared/
+│  ├─ common/           # 공통 오류 응답과 ModuleSchema 계약
+│  └─ runtime/          # 공통 JWT 검증, Clock, Flyway 실행 설정
+├─ integration-tests/   # 두 서비스를 함께 띄우는 회귀 테스트, 배포하지 않음
+├─ deploy/              # Nginx 게이트웨이 설정
+├─ scripts/             # 개발용 키 생성, 분리 서비스 검증
+├─ compose.yaml         # 두 서비스 + gateway + PostgreSQL
+└─ Dockerfile           # SERVICE_NAME(identity/routine)으로 이미지 선택
 ```
 
-### 도메인 모듈 추가 방법 (예: workout)
-도메인 하나에 `{도메인}-service` 모듈 하나를 만듭니다. 다른 도메인에 공개할 것은 모듈 안의 `api` 패키지에 둡니다.
+`services/identity`와 `services/routine`은 각각 **하나의 실행 가능한 Gradle 모듈**입니다. 자기 서비스 코드와 마이그레이션을 모두 포함하며 서로에게 의존하지 않습니다. 서비스 폴더의 `src/main/java/com/barofit/IdentityApplication.java` 또는 `RoutineApplication.java`가 실행 시작점입니다.
 
-1. `modules/workout-service/build.gradle` 생성
-   ```groovy
-   dependencies {
-       implementation project(':common')
-       implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
-       // 다른 서비스 구현 모듈은 의존하지 않습니다. 서비스 간 호출은 HTTP/이벤트 계약으로 연결합니다.
-   }
-   ```
-2. 소스는 `com.barofit.workout` 패키지 하위에 작성합니다.
-   ```
-   com.barofit.workout
-   ├─ api/      # 공개 계약: 조회 인터페이스, 이벤트, DTO (Spring·JPA 애노테이션 없는 JDK 타입)
-   └─ ...       # 내부 구현: 엔티티, 리포지토리, 서비스, 컨트롤러
-   ```
-3. `settings.gradle`에 `include 'modules:workout-service'` 추가
-4. `workout-app` 실행 모듈을 만들고 `service-runtime`과 자기 도메인 모듈에만 의존합니다. Compose 서비스와 게이트웨이 경로를 추가합니다.
+### 서비스 추가 방법 (예: workout)
+
+1. `services/workout`에 `build.gradle`, `src/main/java/com/barofit/WorkoutApplication.java`, 도메인 코드와 마이그레이션을 둡니다.
+2. `settings.gradle`에 `include 'services:workout'`을 등록하고 `shared:runtime`에 의존시킵니다.
+3. Compose에 별도 컨테이너를 추가하고 게이트웨이 경로를 연결합니다. 다른 서비스 구현 모듈에는 의존하지 않습니다.
 
 
 ## 에러 응답
@@ -65,7 +56,7 @@ RFC 9457 Problem Details 형식에 `code` 속성을 더해 응답합니다. 앱�
 ```json
 { "type": "about:blank", "title": "Bad Request", "status": 400, "detail": "요청 값이 올바르지 않습니다.", "instance": "/api/v1/...", "code": "INVALID_INPUT" }
 ```
-- 형식은 `common`이 정하고, 에러 코드 목록은 각 모듈이 `ErrorCode` enum으로 소유합니다.
+- 형식은 `shared/common`이 정하고, 에러 코드 목록은 각 모듈이 `ErrorCode` enum으로 소유합니다.
 
 ## DB 마이그레이션
 - 모듈마다 PostgreSQL schema를 하나씩 가지며, Flyway도 모듈마다 따로 실행됩니다. Spring Boot의 Flyway 자동설정은 사용하지 않습니다.
@@ -112,15 +103,15 @@ docker compose up -d --build --remove-orphans   # 외부 API: PORT (기본 3002)
 # JVM으로 따로 실행할 경우 (각각 별도 터미널)
 cp .env.example .env    # 프로젝트 root 위치에서 터미널 명령어 실행
 docker compose up -d postgres
-./gradlew :identity-app:bootRun  # 기본 3004
-./gradlew :routine-app:bootRun   # 기본 3005
+./gradlew :services:identity:bootRun  # 기본 3004
+./gradlew :services:routine:bootRun   # 기본 3005
 ```
 > 접속 정보는 `.env`에서 수정합니다.
 
 ## 테스트 / 빌드
 ```bash
 ./gradlew test    # 테스트 (Docker 필요)
-./gradlew build   # identity-app/build/libs/app.jar, routine-app/build/libs/app.jar
+./gradlew build   # services/identity/build/libs/app.jar, services/routine/build/libs/app.jar
 ```
 > DB가 필요한 테스트는 Testcontainers로 PostgreSQL을 띄우므로 **로컬과 CI 모두 Docker가 필요합니다.**
 > 이미지 태그는 Gradle이 `compose.yaml`에서 읽어 넘기므로, IDE에서도 Gradle 테스트 러너로 실행해야 합니다.
@@ -140,23 +131,23 @@ docker compose up -d postgres
 
 | 서비스 | 외부 직접 포트(기본, localhost만) | 소유 스키마 | 도메인 의존 |
 |---|---|---|---|
-| identity-service | 3004 | identity | identity-service만 |
-| routine-service | 3005 | routine | routine만 |
+| identity-service | 3004 | identity | identity 코드만 |
+| routine-service | 3005 | routine | routine 코드만 |
 | gateway | PORT(기본 3002, LAN 접근 가능) | 없음 | HTTP 라우팅 |
 
-게이트웨이는 `/api/v1/auth/**`, `/api/v1/users/**`, `/.well-known/jwks.json`을 인증 서비스로, 운동·루틴 API를 루틴 서비스로 전달합니다. 프론트 `EXPO_PUBLIC_API_URL`은 게이트웨이 주소 하나를 사용합니다. 현재 로컬 `.env`는 PORT=3003입니다.
+게이트웨이는 `/api/v1/auth/**`, `/api/v1/users/**`, `/.well-known/jwks.json`을 인증 서비스로, 운동·루틴 API를 루틴 서비스로 전달합니다. 프론트 `EXPO_PUBLIC_API_URL`은 게이트웨이 주소 하나를 사용합니다. 로컬에서 사용하는 포트는 `.env`의 `PORT`로 지정합니다.
 
 Swagger는 게이트웨이 `/swagger-ui.html`에서 Routine Service / Identity Service를 선택합니다. 원본 명세는 `/v3/api-docs`, `/identity/v3/api-docs`입니다. 직접 포트의 `/actuator/health`로 각 서비스 상태를 확인합니다. 게이트웨이 `/health`는 프록시 자체의 생존 상태만 나타냅니다.
 
-각 서비스는 자기 도메인의 엔티티·리포지토리·Flyway 파일만 포함하며 자기 스키마만 마이그레이션합니다. 기존 DB 볼륨 및 migration 이력은 유지됩니다. 현재 DB 접속 계정은 공유하므로 DB 권한으로 접근을 차단한 구조는 아니며, 서비스 코드에서 다른 스키마를 조회하거나 FK를 만들지 않습니다.
+각 서비스는 자기 엔티티·리포지토리·Flyway 파일만 포함하며 자기 스키마만 마이그레이션합니다. 기존 DB 볼륨 및 migration 이력은 유지됩니다. 현재 DB 접속 계정은 공유하므로 DB 권한으로 접근을 차단한 구조는 아니며, 서비스 코드에서 다른 스키마를 조회하거나 FK를 만들지 않습니다.
 
 기존 Spring 이벤트(`UserWithdrawn` 등)는 프로세스 내부 이벤트입니다. 다른 서비스로의 탈퇴 전파/루틴 정리가 필요하면 HTTP 또는 메시지 이벤트 연동을 추가해야 합니다. 현재 즉시 토큰 폐기나 루틴 데이터 삭제 전파는 구현되어 있지 않습니다.
 
 독립 서비스 검증(로컬 개발 키만 사용):
 
 ```bash
-./gradlew :identity-app:verifyServiceIsolation :routine-app:verifyServiceIsolation
-SMOKE_BASE_URL=http://localhost:3003 node scripts/verify-services.cjs
+./gradlew :services:identity:verifyServiceIsolation :services:routine:verifyServiceIsolation
+SMOKE_BASE_URL=http://localhost:3003 node scripts/verify-services.cjs  # PORT=3003 예시
 ```
 
 스크립트는 분리된 Swagger/라우팅, 인증 거부, JWT 루틴 CRUD·소유권을 확인하고 생성한 테스트 루틴을 삭제합니다. 실제 소셜 로그인은 별도 실기기 확인이 필요합니다. 직접 서비스 포트를 바꾼 경우 `SMOKE_IDENTITY_URL`, `SMOKE_ROUTINE_URL`도 지정합니다.

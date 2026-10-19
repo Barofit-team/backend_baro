@@ -18,7 +18,7 @@ allprojects {
 }
 
 // ':modules'는 폴더라 제외
-configure(subprojects.findAll { it.path != ':modules' }) {
+configure(subprojects.findAll { !(it.path in [':services', ':shared']) }) {
 	apply plugin: 'java-library'
 	apply plugin: 'io.spring.dependency-management'
 

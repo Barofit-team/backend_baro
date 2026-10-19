@@ -1,0 +1,17 @@
+plugins {
+    id 'org.springframework.boot'
+    id 'java-test-fixtures'
+}
+
+dependencies {
+    implementation project(':shared:runtime')
+    implementation 'org.springframework.security:spring-security-oauth2-jose'
+    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.1.1'
+
+    testFixturesImplementation 'org.springframework.security:spring-security-oauth2-jose'
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+}
+
+tasks.named('bootJar') { archiveFileName = 'app.jar' }
+tasks.named('bootRun') { workingDir = rootProject.projectDir }
+apply from: rootProject.file('gradle/service-isolation.gradle')

@@ -1,13 +1,13 @@
 # Routine Service MVP
 
-단일 PostgreSQL의 `routine` 스키마를 소유하는 도메인 모듈이다. 다른 서비스의 테이블을 조회하거나 FK로 참조하지 않는다. 현재는 `app`이 `modules:routine`을 조립하며, 독립 서비스로 분리할 때도 도메인 경계를 유지한다.
+`services/routine`은 독립 실행 가능한 루틴 서비스다. 단일 PostgreSQL의 `routine` 스키마를 소유하며 다른 서비스의 테이블을 조회하거나 FK로 참조하지 않는다.
 
 ## 실행 및 Swagger
 
 Java 21과 PostgreSQL이 필요하다. 루트 README와 `.env.example`에 따라 DB·JWT 키·소셜 로그인 설정을 준비한다. `scripts/generate-jwt-keys.sh`로 생성한 키 경로와 kid를 `.env`에 지정한다. 설정 파일과 키는 커밋하지 않는다.
 
 ```bash
-./gradlew :routine-app:bootRun
+./gradlew :services:routine:bootRun
 ```
 
 - Swagger UI: http://localhost:3002/swagger-ui.html
@@ -18,7 +18,7 @@ Java 21과 PostgreSQL이 필요하다. 루트 README와 `.env.example`에 따라
 
 ## 인증 모듈 및 프론트 연동
 
-구글·카카오 인가 코드를 `POST /api/v1/auth/social-login/code`로 보내면 identity가 자동 가입/로그인과 토큰 발급을 처리한다. app의 Spring Security가 JWT를 검증하고, `PrincipalCurrentUserProvider`가 검증된 Principal의 이름(JWT `sub`)을 내부 사용자 UUID로 읽는다. Routine 모듈은 identity 내부 Entity/Service를 참조하지 않는다.
+구글·카카오 인가 코드를 `POST /api/v1/auth/social-login/code`로 보내면 identity가 자동 가입/로그인과 토큰 발급을 처리한다. 루틴 서비스의 Spring Security가 JWT를 검증하고, `PrincipalCurrentUserProvider`가 검증된 Principal의 이름(JWT `sub`)을 내부 사용자 UUID로 읽는다. 루틴 서비스는 identity 내부 Entity/Service를 참조하지 않는다.
 
 프론트의 공통 API 함수를 사용한다.
 
@@ -216,6 +216,6 @@ GET /api/v1/routine-templates?category=FULL_BODY&difficulty=BEGINNER
 
 ## 독립 서비스 배포
 
-`routine-app`은 `modules:routine`과 `service-runtime`만 포함한다. 인증 구현·소셜 시크릿·JWT 개인 키는 포함하지 않는다. Compose의 `routine-service`에서 실행하고 `routine` 스키마만 마이그레이션한다. 인증 서비스와는 사용자 UUID(`sub`) 및 JWT 공개 키 계약으로 연결된다.
+`services/routine`은 루틴 실행 앱과 구현 코드를 함께 포함하고 `shared/runtime`을 사용한다. 인증 구현·소셜 시크릿·JWT 개인 키는 포함하지 않는다. Compose의 `routine-service`에서 실행하고 `routine` 스키마만 마이그레이션한다. 인증 서비스와는 사용자 UUID(`sub`) 및 JWT 공개 키 계약으로 연결된다.
 
-프론트는 gateway 주소를 유지한다. `app` 디렉터리는 기존 두 도메인 회귀 테스트 전용이며 실제 배포 대상이 아니다. 회귀 테스트 외에 독립 컨테이너별 health, Swagger 경로 분리, 공개 키만으로 JWT CRUD, Flyway 이력을 실제 실행 환경에서 확인한다.
+프론트는 gateway 주소를 유지한다. `integration-tests` 디렉터리는 두 도메인의 회귀 테스트 전용이며 실제 배포 대상이 아니다. 회귀 테스트 외에 독립 컨테이너별 health, Swagger 경로 분리, 공개 키만으로 JWT CRUD, Flyway 이력을 실제 실행 환경에서 확인한다.

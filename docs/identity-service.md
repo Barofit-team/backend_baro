@@ -37,29 +37,20 @@ Google·Kakao 소셜 로그인만 사용하는 회원 체계다. 현재 앱(Expo
 ## 2. 프로젝트 구조와 규칙
 
 ### 2.1 구조
-도메인 구현 모듈과 독립 실행 앱을 분리한다. 인증은 `identity-app`, 루틴은 `routine-app`이 실행하며 각기 다른 컨테이너로 배포한다. PostgreSQL은 하나를 공유하고 스키마만 분리한다.
+인증은 `services/identity`, 루틴은 `services/routine`에 각각 실행 앱과 구현 코드를 함께 둔다. 두 서비스는 독립 컨테이너로 배포한다. PostgreSQL은 하나를 공유하고 스키마만 분리한다.
 
 ```
 backend_baro/
-├── identity-app/             # 인증 서비스 실행 앱
-├── routine-app/              # 루틴 서비스 실행 앱
-├── service-runtime/          # 공용 JWT 검증과 마이그레이션 실행
-├── app/                      # 기존 통합 회귀 테스트 전용
-├── common/                   # 공통 에러 응답, ModuleSchema
-├── modules/
-│   └── identity-service/     # 회원·인증·사용자 프로필 도메인
-│       └── com.barofit.identity
-│           ├── api/          # 공개 계약(JDK 타입만). 다른 도메인은 여기만 참조
-│           │                 #   UserQueryApi, UserSummary, BarofitTokenClaims, IdentityPublicPaths,
-│           │                 #   event/UserRegistered, event/UserWithdrawn
-│           ├── auth/         # 로그인·refresh·logout
-│           ├── social/       # 소셜 ID Token 검증
-│           ├── token/        # 바로핏 JWT, Refresh Token
-│           ├── user/         # 사용자, 소셜 계정, 탈퇴, 온보딩
-│           ├── web/          # 컨트롤러
-│           └── config/       # ModuleSchema 등록
-├── scripts/generate-jwt-keys.sh
-├── compose.yaml              # postgres:18.6 + identity-service + routine-service + gateway
+├── services/
+│   ├── identity/       # 실행 앱, 인증 API·도메인, identity 마이그레이션
+│   └── routine/        # 실행 앱, 루틴 API·도메인, routine 마이그레이션
+├── shared/
+│   ├── common/         # 공통 에러 응답, ModuleSchema
+│   └── runtime/        # 공용 JWT 검증, Flyway 실행
+├── integration-tests/  # 두 서비스의 기존 통합 회귀 테스트 (배포 제외)
+├── deploy/             # 게이트웨이
+├── scripts/
+├── compose.yaml
 └── Dockerfile
 ```
 
@@ -67,7 +58,7 @@ backend_baro/
 
 ### 2.2 의존 규칙 (ArchUnit `ArchitectureTests`로 검사)
 - `common`은 도메인 모듈에 의존하지 않는다.
-- 다른 도메인과 `app`은 그 도메인의 `api` 패키지(`com.barofit.{도메인}.api`)만 참조한다. Gradle 모듈로 나누지 않아 컴파일러가 막지 못하므로 테스트가 막는다. 위반 클래스를 일부러 넣어 실제로 잡히는 것을 확인했다.
+- 다른 도메인은 상대 서비스의 `api` 패키지(`com.barofit.{도메인}.api`)만 참조한다. Gradle 모듈로 나누지 않아 컴파일러가 막지 못하므로 테스트가 막는다. 위반 클래스를 일부러 넣어 실제로 잡히는 것을 확인했다.
 - `api` 패키지는 JDK와 다른 도메인의 `api` 패키지에만 의존한다(`common`도 참조하지 않음). 서비스 분리 후 언어 독립 계약으로 바꾸기 위해서다.
 - 다른 schema를 참조하는 FK, 네이티브 쿼리, JPQL은 쓰지 않는다(코드 리뷰로 확인).
 
@@ -80,7 +71,7 @@ backend_baro/
 
 ### 3.1 인프라
 - **postgres 이미지 태그의 기준은 `compose.yaml` 하나다.** 루트 `build.gradle`이 `image: postgres:...`를 읽어 테스트에 시스템 프로퍼티로 넘긴다. 찾지 못하면 빌드가 실패한다.
-- **모듈별 Flyway:** 각 모듈이 `ModuleSchema`를 Bean으로 등록하면 각 실행 앱이 포함한 service-runtime의 `ModuleMigrations`가 모듈마다 Flyway 인스턴스를 따로 실행한다. JPA는 마이그레이션이 끝난 뒤 만든다. Spring Boot Flyway 자동설정 모듈은 넣지 않는다.
+- **모듈별 Flyway:** 각 모듈이 `ModuleSchema`를 Bean으로 등록하면 각 실행 앱이 포함한 shared/runtime의 `ModuleMigrations`가 모듈마다 Flyway 인스턴스를 따로 실행한다. JPA는 마이그레이션이 끝난 뒤 만든다. Spring Boot Flyway 자동설정 모듈은 넣지 않는다.
 - `ddl-auto: validate` 고정. 스키마는 Flyway만 변경한다.
 - 테스트는 Testcontainers PostgreSQL(H2 없음). Docker 이미지는 멀티스테이지 빌드, uid 1001로 실행한다.
 - 모든 모듈에 `-parameters` 컴파일 옵션을 준다(`@Query`의 named parameter에 필요).
