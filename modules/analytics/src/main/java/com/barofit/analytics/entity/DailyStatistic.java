@@ -59,4 +59,27 @@ public class DailyStatistic {
     public Integer getTotalReps() {
         return totalReps;
     }
+
+    public void addWorkout(
+            int durationSeconds,
+            int reps
+    ) {
+        if (durationSeconds < 0 || reps < 0) {
+            throw new IllegalArgumentException(
+                    "Workout values must not be negative"
+            );
+        }
+
+        this.sessionCount = Math.addExact(
+                this.sessionCount, 1
+        );
+
+        this.totalDurationSeconds = Math.addExact(
+                this.totalDurationSeconds, durationSeconds
+        );
+
+        this.totalReps = Math.addExact(
+                this.totalReps, reps
+        );
+    }
 }

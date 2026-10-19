@@ -52,4 +52,20 @@ public class CalendarEntry {
     public Integer getTotalDurationSeconds() {
         return totalDurationSeconds;
     }
+
+    public void addWorkout(int durationSeconds) {
+        if (durationSeconds < 0) {
+            throw new IllegalArgumentException(
+                    "Workout duration must not be negative"
+            );
+        }
+
+        this.sessionCount = Math.addExact(
+                this.sessionCount, 1
+        );
+
+        this.totalDurationSeconds = Math.addExact(
+                this.totalDurationSeconds, durationSeconds
+        );
+    }
 }
