@@ -1,0 +1,19 @@
+// 배포 jar에 다른 도메인 구현이나 통합 테스트 앱이 섞이지 않는지 검사한다.
+tasks.register('verifyServiceIsolation') {
+    dependsOn tasks.named('bootJar')
+    doLast {
+        def own = project.name == 'identity-app' ? 'identity-service' : 'routine'
+        def other = project.name == 'identity-app' ? 'routine' : 'identity-service'
+        def artifact = tasks.named('bootJar').get().archiveFile.get().asFile
+        new java.util.zip.ZipFile(artifact).withCloseable { zip ->
+            def names = zip.entries().collect { it.name }
+            if (!names.any { it.startsWith("BOOT-INF/lib/${own}-") }) {
+                throw new GradleException("${project.name}: 자기 도메인 구현이 없습니다")
+            }
+            if (names.any { it.startsWith("BOOT-INF/lib/${other}-") || it.startsWith('BOOT-INF/lib/app-') }) {
+                throw new GradleException("${project.name}: 다른 서비스 구현이 포함되어 있습니다")
+            }
+        }
+    }
+}
+tasks.named('check') { dependsOn tasks.named('verifyServiceIsolation') }

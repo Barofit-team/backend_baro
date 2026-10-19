@@ -2,6 +2,9 @@ rootProject.name = 'backend_baro'
 
 include 'app'
 include 'common'
+include 'modules:routine'
 
 // 도메인 추가 시 modules/{도메인}-service 등록
 include 'modules:identity-service'
+
+include 'service-runtime', 'identity-app', 'routine-app'

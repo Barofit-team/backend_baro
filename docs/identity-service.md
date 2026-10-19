@@ -37,11 +37,14 @@ Google·Kakao 소셜 로그인만 사용하는 회원 체계다. 현재 앱(Expo
 ## 2. 프로젝트 구조와 규칙
 
 ### 2.1 구조
-도메인 하나에 Gradle 모듈 하나를 둔다. 도메인은 6개 정도로 예상하며, 최종 구성은 "도메인 모듈 6개 + common + app(실행 모듈)"이다.
+도메인 구현 모듈과 독립 실행 앱을 분리한다. 인증은 `identity-app`, 루틴은 `routine-app`이 실행하며 각기 다른 컨테이너로 배포한다. PostgreSQL은 하나를 공유하고 스키마만 분리한다.
 
 ```
 backend_baro/
-├── app/                      # 실행 모듈. 보안 설정(JWT 검증), 마이그레이션 실행, 통합 테스트
+├── identity-app/             # 인증 서비스 실행 앱
+├── routine-app/              # 루틴 서비스 실행 앱
+├── service-runtime/          # 공용 JWT 검증과 마이그레이션 실행
+├── app/                      # 기존 통합 회귀 테스트 전용
 ├── common/                   # 공통 에러 응답, ModuleSchema
 ├── modules/
 │   └── identity-service/     # 회원·인증·사용자 프로필 도메인
@@ -56,7 +59,7 @@ backend_baro/
 │           ├── web/          # 컨트롤러
 │           └── config/       # ModuleSchema 등록
 ├── scripts/generate-jwt-keys.sh
-├── compose.yaml              # postgres:18.6 + app
+├── compose.yaml              # postgres:18.6 + identity-service + routine-service + gateway
 └── Dockerfile
 ```
 
@@ -69,7 +72,7 @@ backend_baro/
 - 다른 schema를 참조하는 FK, 네이티브 쿼리, JPQL은 쓰지 않는다(코드 리뷰로 확인).
 
 ### 2.3 API 경로 규칙 (README에 정의)
-서비스를 분리하면 게이트웨이가 경로 prefix 하나로 라우팅한다. 그래서 `/api/v1/{리소스}`의 prefix는 **한 도메인만 소유**하고, 다른 도메인의 prefix 아래에 API를 만들지 않는다. identity가 소유한 prefix는 `/api/v1/auth/**`, `/api/v1/users/**`, `/.well-known/jwks.json`이다.
+게이트웨이가 경로 prefix로 독립 서비스에 라우팅한다. 그래서 `/api/v1/{리소스}`의 prefix는 **한 도메인만 소유**하고, 다른 도메인의 prefix 아래에 API를 만들지 않는다. identity가 소유한 prefix는 `/api/v1/auth/**`, `/api/v1/users/**`, `/.well-known/jwks.json`이다.
 
 ---
 
@@ -77,7 +80,7 @@ backend_baro/
 
 ### 3.1 인프라
 - **postgres 이미지 태그의 기준은 `compose.yaml` 하나다.** 루트 `build.gradle`이 `image: postgres:...`를 읽어 테스트에 시스템 프로퍼티로 넘긴다. 찾지 못하면 빌드가 실패한다.
-- **모듈별 Flyway:** 각 모듈이 `ModuleSchema`를 Bean으로 등록하면 app의 `ModuleMigrations`가 모듈마다 Flyway 인스턴스를 따로 실행한다. JPA는 마이그레이션이 끝난 뒤 만든다. Spring Boot Flyway 자동설정 모듈은 넣지 않는다.
+- **모듈별 Flyway:** 각 모듈이 `ModuleSchema`를 Bean으로 등록하면 각 실행 앱이 포함한 service-runtime의 `ModuleMigrations`가 모듈마다 Flyway 인스턴스를 따로 실행한다. JPA는 마이그레이션이 끝난 뒤 만든다. Spring Boot Flyway 자동설정 모듈은 넣지 않는다.
 - `ddl-auto: validate` 고정. 스키마는 Flyway만 변경한다.
 - 테스트는 Testcontainers PostgreSQL(H2 없음). Docker 이미지는 멀티스테이지 빌드, uid 1001로 실행한다.
 - 모든 모듈에 `-parameters` 컴파일 옵션을 준다(`@Query`의 named parameter에 필요).
@@ -370,7 +373,7 @@ SDK로 받은 **OIDC ID Token**을 검증하고 바로핏 토큰을 발급한다
 | 401 | `AUTH_INVALID_TOKEN` | Access Token 없음·위조·형식 오류 | 재로그인 |
 
 ### 4.6 공개키 목록 — `GET /.well-known/jwks.json`
-바로핏 Access Token을 검증하는 공개키 목록(JWK Set)이다. 서비스를 분리하면 다른 서버가 쓴다. **앱은 호출하지 않는다.** 키 교체 기간에는 이전 키와 새 키가 함께 있고, 토큰 헤더의 `kid`로 키를 고른다.
+바로핏 Access Token을 검증하는 공개키 목록(JWK Set)이다. 독립 서비스에서 검증에 사용할 수 있다. 현재 루틴 서비스는 공개 JWKS 파일을 읽기 전용으로 마운트하여 사용한다. **앱은 호출하지 않는다.** 키 교체 기간에는 이전 키와 새 키가 함께 있고, 토큰 헤더의 `kid`로 키를 고른다.
 
 ```json
 { "keys": [ { "kty": "RSA", "use": "sig", "alg": "RS256", "kid": "barofit-202610", "e": "AQAB", "n": "z_ciri3MB6eX81o3..." } ] }
