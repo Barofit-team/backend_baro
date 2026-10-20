@@ -65,6 +65,7 @@ RFC 9457 Problem Details 형식에 `code` 속성을 더해 응답합니다. 앱�
 
 ## 인증 API
 > 상세 명세, 구현 내용, MSA 전환 참고: [docs/identity-service.md](docs/identity-service.md)
+> 온보딩 앱 연동: [docs/onboarding-api.md](docs/onboarding-api.md)
 
 | API | 인증 | 설명 |
 |---|---|---|
@@ -73,6 +74,10 @@ RFC 9457 Problem Details 형식에 `code` 속성을 더해 응답합니다. 앱�
 | `POST /api/v1/auth/refresh` | 없음 | `{ refreshToken }` → `{ accessToken, accessTokenExpiresAt, refreshToken }`. 쓸 때마다 회전 |
 | `POST /api/v1/auth/logout` | 없음 | `{ refreshToken }` → 항상 204. 해당 세션만 폐기 |
 | `DELETE /api/v1/users/me` | Access Token | 탈퇴. 이미 탈퇴했어도 204 |
+| `GET /api/v1/users/me` | Access Token | 내 정보, `isOnboarded`, 온보딩 프로필 |
+| `POST /api/v1/users/me/onboarding` | Access Token | 온보딩 저장(닉네임·신체 정보·운동 목표/경험/빈도·코칭 스타일). 201 |
+| `GET /api/v1/users/nicknames/random` | Access Token | 사용 가능한 랜덤 닉네임 |
+| `GET /api/v1/users/nicknames/availability?nickname=` | Access Token | 닉네임 사용 가능 여부 |
 | `GET /.well-known/jwks.json` | 없음 | 바로핏 JWT 공개키 |
 
 - `/api/v1/auth/**`에서는 Authorization 헤더를 무시합니다. 만료된 Access Token이 붙어 있어도 refresh할 수 있습니다.
