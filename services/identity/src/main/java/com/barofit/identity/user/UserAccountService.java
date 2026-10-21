@@ -1,6 +1,7 @@
 package com.barofit.identity.user;
 
 import com.barofit.identity.api.event.UserWithdrawn;
+import com.barofit.identity.profile.UserProfileRepository;
 import com.barofit.identity.token.RefreshTokenRepository;
 import java.time.Clock;
 import java.time.Instant;
@@ -18,6 +19,7 @@ public class UserAccountService {
 	private final UserRepository userRepository;
 	private final SocialAccountRepository socialAccountRepository;
 	private final RefreshTokenRepository refreshTokenRepository;
+	private final UserProfileRepository userProfileRepository;
 	private final ApplicationEventPublisher eventPublisher;
 	private final Clock clock;
 
@@ -33,7 +35,8 @@ public class UserAccountService {
 		// 같은 SNS로 다시 로그인하면 신규 가입
 		socialAccountRepository.deleteAllByUserId(userId);
 		refreshTokenRepository.revokeAllByUserId(userId, now);
-		// 프로필 데이터가 생기면 여기서 함께 삭제
+		// 신체 정보는 남기지 않는다
+		userProfileRepository.deleteByUserId(userId);
 		eventPublisher.publishEvent(new UserWithdrawn(userId, now));
 	}
 

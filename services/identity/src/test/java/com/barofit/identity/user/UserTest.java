@@ -38,4 +38,16 @@ class UserTest {
 		assertThat(user.getProfileImageUrl()).isNull();
 		assertThat(user.getWithdrawnAt()).isEqualTo(NOW.plusSeconds(60));
 	}
+
+	@Test
+	void 닉네임을_바꾸고_온보딩을_완료한다() {
+		User user = User.register("카카오닉", null, NOW);
+
+		user.changeNickname("바로핏", NOW.plusSeconds(60));
+		user.completeOnboarding(NOW.plusSeconds(60));
+
+		assertThat(user.getNickname()).isEqualTo("바로핏");
+		assertThat(user.isOnboarded()).isTrue();
+		assertThat(user.getUpdatedAt()).isEqualTo(NOW.plusSeconds(60));
+	}
 }

@@ -1,7 +1,7 @@
 # Identity 서비스 개발 문서
 
 - 작성일: 2026-10-14
-- 이슈: #2 (OAuth2.0 로그인 기능 개발), #5 (로그인 로직 변경: 인가 코드 로그인 추가)
+- 이슈: #2 (OAuth2.0 로그인 기능 개발), #5 (로그인 로직 변경: 인가 코드 로그인 추가), #10 (온보딩)
 - 테스트: `./gradlew build` 기준 90건 통과, 실패 0건
 
 ## 목차
@@ -26,11 +26,13 @@ Google·Kakao 소셜 로그인만 사용하는 회원 체계다. 현재 앱(Expo
 | 로그아웃(현재 기기 세션 폐기) | `POST /api/v1/auth/logout` |
 | 회원 탈퇴(멱등) | `DELETE /api/v1/users/me` |
 | 공개키 노출 | `GET /.well-known/jwks.json` |
-| 온보딩 완료 반영 | `UserAccountService.completeOnboarding` |
+| 온보딩(닉네임 확정, 신체 정보·운동 성향 저장) | `POST /api/v1/users/me/onboarding` |
+| 닉네임 랜덤 생성·중복 확인 | `GET /api/v1/users/nicknames/random`, `/availability` |
+| 내 정보 조회 | `GET /api/v1/users/me` |
 | 다른 도메인용 사용자 조회 | `UserQueryApi.findSummary`, `findSummaries` |
 | 만료 토큰 정리 | 매일 04:00 배치 |
 
-**범위 밖:** 회원 정보 조회·수정 API(`GET /users/me` 등), 사용자 프로필(온보딩) 데이터와 API.
+**범위 밖:** 회원 정보·프로필 수정 API, 온보딩 후 플랜 생성(루틴 서비스 역할). 앱 연동은 [onboarding-api.md](onboarding-api.md)를 본다.
 
 ---
 
@@ -86,8 +88,11 @@ RFC 9457 Problem Details에 `code`를 더한다. 각 도메인은 `ErrorCode`를
 | `users` | `id`(UUIDv7, 앱에서 생성), `nickname`, `profile_image_url`, `role`, `status`, `onboarded`, `last_login_at`, `withdrawn_at` | role: USER/ADMIN, status: ACTIVE/WITHDRAWN |
 | `social_accounts` | `user_id`, `provider`, `provider_user_id` | `(provider, provider_user_id)` UNIQUE. 동시 가입 판정에 사용 |
 | `refresh_tokens` | `user_id`, `session_id`, `token_hash`(SHA-256 hex), `expires_at`(30일 슬라이딩), `session_expires_at`(90일 절대), `revoked_at` | `token_hash` UNIQUE |
+| `user_profiles` (V2) | `user_id`(PK·FK), `gender`, `birth_year`(나이로 입력받아 변환), `height_cm`, `weight_kg`, `goal`, `experience_level`, `weekly_workout_days`, `coaching_style` | 값 범위·enum CHECK. 탈퇴 시 삭제 |
+| `user_profile_discomfort_areas` (V2) | `user_id`, `area` | PK `(user_id, area)`, 프로필 삭제 시 CASCADE. 해당 없음이면 행 없음 |
 
 - schema 내부에는 FK를 건다.
+- 닉네임 유니크: 부분 유니크 인덱스 `uk_users_nickname_onboarded`(`lower(nickname)`, `onboarded AND status='ACTIVE'`). 온보딩 전 SNS 닉네임끼리는 겹칠 수 있고, 탈퇴하면 닉네임이 지워져 반납된다.
 - 닉네임과 프로필 사진은 **가입할 때만** SNS 값으로 채운다. 닉네임은 100자를 넘으면 자르고, 사진 URL은 2048자를 넘으면 저장하지 않는다.
 
 ### 3.4 바로핏 JWT 발급
@@ -157,7 +162,13 @@ RFC 9457 Problem Details에 `code`를 더한다. 각 도메인은 `ErrorCode`를
 - 이미 탈퇴했어도 204다(멱등). 응답이 유실돼 앱이 재시도해도 성공해야 SDK 연결 해제를 건너뛰지 않는다.
 
 ### 3.11 온보딩, 정리 배치, 사용자 조회
-- **온보딩:** 프로필 저장 로직이 `UserAccountService.completeOnboarding(userId)`를 호출하면 같은 트랜잭션 안에서 `onboarded=true`가 된다. 트랜잭션 밖에서 호출하면 실패한다(`MANDATORY`).
+- **온보딩:** `ProfileService.onboard`가 한 트랜잭션에서 닉네임 확정, 프로필 저장, `UserAccountService.completeOnboarding(userId)`(`MANDATORY`) 호출을 한다.
+  - 사용자 행을 `SELECT ... FOR UPDATE`로 잠가 같은 사용자의 동시 요청을 직렬화한다. 두 번째 요청은 409 `PROFILE_ALREADY_ONBOARDED`.
+  - 닉네임은 미리 조회해 중복이면 409 `PROFILE_NICKNAME_DUPLICATED`. 다른 사용자와 동시에 같은 닉네임을 확정하면 flush 시 `uk_users_nickname_onboarded` 위반만 같은 코드로 바꾸고, 다른 제약 위반은 그대로 던진다.
+  - 나이는 한국 시간 기준 올해에서 빼 `birth_year`로 저장하고, 응답할 때 다시 나이로 계산한다.
+  - 닉네임 규칙(`NicknamePolicy`): 2~10자, 한글(완성형)·영문·숫자. 랜덤 닉네임(`RandomNicknameGenerator`)은 형용사+명사+숫자(1~9999)로 항상 규칙을 만족하고, 사용 중이면 최대 10회 다시 뽑는다. 예약하지 않는다.
+  - 운동 경험 `experience_level`은 루틴 `Difficulty`(BEGINNER/INTERMEDIATE/ADVANCED)에 `NOVICE`(입문자)를 더한 값이다. 서비스 간 코드 의존은 없다.
+- **탈퇴와 프로필:** 탈퇴 트랜잭션 안에서 프로필(불편 부위 포함)을 삭제한다.
 - **정리 배치:** 매일 04:00(서버 시간대)에 절대 만료가 지난 Refresh Token 행을 지운다. 폐기된 행을 바로 지우면 재사용 탐지가 동작하지 않으므로 절대 만료 기준으로만 지운다.
 - **사용자 조회:** `findSummary(userId)`는 `Optional<UserSummary(id, nickname, profileImageUrl)>`를 돌려준다. 목록처럼 여러 명이 필요하면 `findSummaries(userIds)`로 한 번에 조회한다. 결과는 ID를 키로 하는 Map이고, 탈퇴했거나 없는 사용자는 빠진다. 서비스 분리 후 HTTP 호출 한 번으로 바뀌는 자리라 단건 조회를 반복하지 않는다.
 
@@ -172,7 +183,13 @@ RFC 9457 Problem Details에 `code`를 더한다. 각 도메인은 `ErrorCode`를
 | POST | `/api/v1/auth/refresh` | 없음 | 200 |
 | POST | `/api/v1/auth/logout` | 없음 | 204 |
 | DELETE | `/api/v1/users/me` | Access Token | 204 |
+| GET | `/api/v1/users/me` | Access Token | 200 |
+| POST | `/api/v1/users/me/onboarding` | Access Token | 201 |
+| GET | `/api/v1/users/nicknames/random` | Access Token | 200 |
+| GET | `/api/v1/users/nicknames/availability` | Access Token | 200 |
 | GET | `/.well-known/jwks.json` | 없음 | 200 |
+
+온보딩·내 정보·닉네임 API의 요청/응답과 앱 흐름은 [onboarding-api.md](onboarding-api.md)에 있다.
 
 ### 4.1 공통 규칙
 
@@ -381,7 +398,11 @@ SDK로 받은 **OIDC ID Token**을 검증하고 바로핏 토큰을 발급한다
 | `AUTH_SOCIAL_PROVIDER_UNAVAILABLE` | 503 | social-login, social-login/code | 소셜 서버 장애·타임아웃, 서버 소셜 설정 오류 | 잠시 후 재시도 |
 | `AUTH_INVALID_REFRESH` | 401 | refresh | Refresh Token 없음·만료 | 재로그인 |
 | `AUTH_SESSION_REVOKED` | 401 | refresh | 세션 폐기(재사용 탐지, 로그아웃한 토큰) | 재로그인 |
-| `AUTH_USER_WITHDRAWN` | 401 | refresh (이후 `/users/me` 조회 계열) | 탈퇴한 사용자 | 로컬 토큰 삭제 후 로그인 화면 |
+| `AUTH_USER_WITHDRAWN` | 401 | refresh, `/users/me`, 온보딩 | 탈퇴한 사용자 | 로컬 토큰 삭제 후 로그인 화면 |
+| `PROFILE_NICKNAME_INVALID` | 400 | 온보딩 | 닉네임 규칙 위반 | 닉네임 수정 |
+| `PROFILE_NICKNAME_DUPLICATED` | 409 | 온보딩 | 이미 사용 중인 닉네임 | 다른 닉네임 |
+| `PROFILE_ALREADY_ONBOARDED` | 409 | 온보딩 | 이미 온보딩 완료 | 홈으로 |
+| `PROFILE_NICKNAME_GENERATION_FAILED` | 503 | 랜덤 닉네임 | 생성 실패(사용 중인 값만 뽑힘) | 재시도 또는 직접 입력 |
 | `INVALID_INPUT` | 400 | 모든 API | 요청 값 오류 | 요청 수정 |
 | `NOT_FOUND` | 404 | 모든 API | 없는 경로 | - |
 | `METHOD_NOT_ALLOWED` | 405 | 모든 API | 지원하지 않는 메서드 | - |
@@ -465,9 +486,11 @@ API 요청 → 401 AUTH_TOKEN_EXPIRED
 | 구분 | 테스트 | 내용 |
 |---|---|---|
 | 단위 | `AccessTokenIssuerTest`, `JwtKeysTest`, `RefreshTokenValuesTest`, `SocialIdTokenVerifierTest`, `UserTest` | 토큰 claim, 키 짝 검증, 해시, ID Token의 iss·aud·exp·서명·nonce, 교환 client-id의 aud 허용, Kakao 사진 https 변환, 닉네임·URL 길이 |
+| 단위 | `NicknamePolicyTest`, `RandomNicknameGeneratorTest` | 닉네임 규칙, 랜덤 닉네임이 항상 규칙을 만족 |
 | 단위 | `SocialAuthorizationCodeClientTest` 8건 | 코드 교환 성공, 만료 코드(401), 잘못된 시크릿·소셜 서버 5xx·`id_token` 누락·설정 누락(503), 설정 toString의 시크릿 마스킹 |
 | 공통 | `GlobalExceptionHandlerTest`, `ErrorHandlingAutoConfigurationTest` | 에러 형식, 자동설정 중복 등록 방지 |
 | 통합(Testcontainers) | `AuthApiTest` 29건 | 가입·로그인, 인가 코드 가입(ID Token 방식과 같은 회원), 허용 안 된 redirectUri 400, 만료 코드 401, nonce 누락 400, 동시 가입(8스레드), 회전, 재사용 탐지, 동시 refresh, 만료, logout, 탈퇴 멱등, onboarded, 사용자 단건·여러 건 조회 |
+| 통합(Testcontainers) | `OnboardingApiTest` 13건 | 저장·조회, 선택 항목 생략, 재온보딩 409, 닉네임 중복(대소문자 무시)·형식 오류, 입력 검증 400, 다른 사용자 동시 같은 닉네임(6스레드), 같은 사용자 동시 온보딩, 랜덤 닉네임, 탈퇴 시 프로필 삭제·닉네임 반납, 미인증 401 |
 | 통합 | `SecurityConfigTest`, `JwksEndpointTest`, `IdentityPersistenceTest`, `BaroApplicationTests` | 만료·위조 구분, 공개 경로 헤더 무시, JWKS, 제약 조건, JwtDecoder Bean 하나 |
 | 구조 | `ArchitectureTests` 3건 | common 독립, api 패키지는 JDK만, 다른 도메인은 api 패키지만 참조 |
 
@@ -483,8 +506,7 @@ API 요청 → 401 AUTH_TOKEN_EXPIRED
 **확인하지 않은 것:** Android Expo Go에서의 구글 로그인(이번 범위에서 제외). Google은 WebView 로그인을 막는 정책이 있어 Android에서는 차단될 수 있다.
 
 **알려진 제한 (프론트엔드):**
-- 온보딩 저장 API가 없어 `isOnboarded`가 계속 false다. 로그인할 때마다 온보딩 화면으로 간다.
-- `GET /api/v1/users/me`가 없어 앱 재시작 시 자동 로그인을 하지 않는다.
+- 온보딩 저장 API와 `GET /api/v1/users/me`는 #10에서 추가됐다. 앱 연동은 아직 하지 않았다([onboarding-api.md](onboarding-api.md)).
 
 ---
 

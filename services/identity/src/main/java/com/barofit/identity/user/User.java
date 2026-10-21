@@ -71,6 +71,12 @@ public class User {
 		this.updatedAt = now;
 	}
 
+	/** 온보딩에서 닉네임 확정. 형식 검증은 호출하는 쪽이 한다 */
+	public void changeNickname(String nickname, Instant now) {
+		this.nickname = nickname;
+		this.updatedAt = now;
+	}
+
 	public void completeOnboarding(Instant now) {
 		this.onboarded = true;
 		this.updatedAt = now;
