@@ -1,10 +1,12 @@
 package com.barofit.identity.profile;
 
 public enum CoachingStyle {
+	/** 친근한 */
+	FRIENDLY,
+	/** 차분한 */
+	CALM,
 	/** 스파르타 */
 	SPARTA,
-	/** 상냥한 */
-	GENTLE,
-	/** 친구같은 */
-	FRIENDLY
+	/** 분석적인 */
+	ANALYTICAL
 }

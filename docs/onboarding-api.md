@@ -13,8 +13,9 @@
   └─ isOnboarded = false → 온보딩
         1) 닉네임: 진입 시 GET /nicknames/random 으로 기본값 채움
            입력이 바뀌면 GET /nicknames/availability 로 확인(디바운스 권장)
-        2) 신체 정보 → 3) 운동 목표 → 4) 운동 경험 → 5) 운동 빈도 → 6) 코칭 스타일
-        7) POST /me/onboarding (전체를 한 번에 전송) → 201 → 홈
+        2) 신체 정보(성별·나이 / 키·몸무게) → 3) 운동 목표 → 4) 운동 경험
+        5) 운동 빈도 → 6) 불편한 부위 → 7) 코칭 스타일
+        8) POST /me/onboarding (전체를 한 번에 전송) → 201 → 홈
 
 앱 재시작: 저장된 토큰으로 GET /me → isOnboarded로 홈/온보딩 결정
 ```
@@ -40,18 +41,18 @@
 |---|---|---|---|
 | `nickname` | string | O | 2~10자, 한글(완성형)·영문·숫자. 공백·특수문자·이모지 불가. 중복은 대소문자 무시 |
 | `gender` | string | O | `MALE`, `FEMALE` |
-| `birthYear` | number | O | 1900 ~ 올해 |
+| `age` | number | O | 나이. 14 ~ 100 |
 | `heightCm` | number | O | 100.0 ~ 250.0, 소수 첫째 자리까지 |
 | `weightKg` | number | O | 20.0 ~ 300.0, 소수 첫째 자리까지 |
-| `skeletalMuscleKg` | number \| null | X | 골격근량. 5.0 ~ 150.0, 소수 첫째 자리까지, 몸무게보다 작아야 함 |
-| `bodyFatPercent` | number \| null | X | 체지방률. 1.0 ~ 70.0, 소수 첫째 자리까지 |
-| `goals` | string[] | O | 운동 목표, 1개 이상 복수 선택. `WEIGHT_LOSS`(체중 감량), `MUSCLE_GAIN`(근육량 증가), `HEALTH_CARE`(건강관리) |
-| `experienceLevel` | string | O | 운동 경험. `NONE`(없음), `BEGINNER`(초급), `INTERMEDIATE`(중급), `ADVANCED`(고급). NONE 외에는 루틴 난이도(`difficulty`)와 같은 값 |
-| `weeklyWorkoutDays` | number | O | 희망 운동 빈도(주 n회). 1 ~ 7 |
-| `coachingStyle` | string | O | `SPARTA`(스파르타), `GENTLE`(상냥한), `FRIENDLY`(친구같은) |
+| `goal` | string | O | 운동 목표, 1개 선택. `WEIGHT_LOSS`(체중 감량), `STRENGTH`(근력 향상), `ENDURANCE`(체력 증진), `POSTURE`(자세 교정) |
+| `experienceLevel` | string | O | 운동 경험, 1개 선택. `NOVICE`(입문자), `BEGINNER`(초급자), `INTERMEDIATE`(중급자), `ADVANCED`(숙련자). NOVICE 외에는 루틴 난이도(`difficulty`)와 같은 값 |
+| `weeklyWorkoutDays` | number | O | 희망 운동 빈도(주 n회). 2 ~ 6 |
+| `discomfortAreas` | string[] | O | 불편한 부위, 복수 선택. `NECK_SHOULDER`(목/어깨), `ARM_WRIST`(팔/손목), `BACK`(등/허리), `LEG_ANKLE`(다리/발목). "해당 없음"은 빈 배열 `[]` |
+| `coachingStyle` | string | O | 1개 선택. `FRIENDLY`(친근한), `CALM`(차분한), `SPARTA`(스파르타), `ANALYTICAL`(분석적인) |
 
 - 화면 문구(한글 라벨)는 앱이 가진다. 서버는 enum 값만 주고받는다.
-- 목표 부위/불편 부위는 보류됐다. 나중에 필드가 추가된다.
+- 나이는 서버에서 출생연도(한국 시간 기준 올해 - 나이)로 바꿔 저장한다. 응답의 `age`는 다시 계산한 값이라 해가 바뀌면 1 오른다.
+- `discomfortAreas`를 빼고 보내면 400이다. 해당 없음도 `[]`로 보낸다.
 
 ## 4. 상세
 
@@ -66,20 +67,19 @@
   "isOnboarded": true,
   "profile": {
     "gender": "FEMALE",
-    "birthYear": 1998,
+    "age": 29,
     "heightCm": 163.5,
     "weightKg": 55.2,
-    "skeletalMuscleKg": 21.3,
-    "bodyFatPercent": 24.8,
-    "goals": ["WEIGHT_LOSS", "HEALTH_CARE"],
-    "experienceLevel": "NONE",
+    "goal": "WEIGHT_LOSS",
+    "experienceLevel": "NOVICE",
     "weeklyWorkoutDays": 3,
+    "discomfortAreas": ["NECK_SHOULDER", "BACK"],
     "coachingStyle": "FRIENDLY"
   }
 }
 ```
 - 온보딩 전이면 `isOnboarded: false`, `profile: null`이다.
-- `goals`의 순서는 보장하지 않는다.
+- `discomfortAreas`는 위 표의 순서(목/어깨 → 팔/손목 → 등/허리 → 다리/발목)로 정렬해 준다.
 
 ### 4.2 `GET /api/v1/users/nicknames/random`
 
@@ -110,14 +110,13 @@
 {
   "nickname": "바로핏",
   "gender": "FEMALE",
-  "birthYear": 1998,
+  "age": 29,
   "heightCm": 163.5,
   "weightKg": 55.2,
-  "skeletalMuscleKg": null,
-  "bodyFatPercent": null,
-  "goals": ["WEIGHT_LOSS", "HEALTH_CARE"],
-  "experienceLevel": "NONE",
+  "goal": "WEIGHT_LOSS",
+  "experienceLevel": "NOVICE",
   "weeklyWorkoutDays": 3,
+  "discomfortAreas": ["BACK", "NECK_SHOULDER"],
   "coachingStyle": "FRIENDLY"
 }
 ```
@@ -127,7 +126,7 @@
 
 | 상태 | code | 상황 | 앱 동작 |
 |---|---|---|---|
-| 400 | `INVALID_INPUT` | 필수값 누락, 범위·자릿수 오류, 정의되지 않은 enum 값, 골격근량 ≥ 몸무게, 미래 출생연도. 필드 오류는 `errors[{field, message}]` | 해당 입력 수정 |
+| 400 | `INVALID_INPUT` | 필수값 누락, 범위·자릿수 오류, 정의되지 않은 enum 값. 필드 오류는 `errors[{field, message}]` | 해당 입력 수정 |
 | 400 | `PROFILE_NICKNAME_INVALID` | 닉네임 규칙 위반 | 닉네임 단계로 이동 |
 | 409 | `PROFILE_NICKNAME_DUPLICATED` | 그사이 다른 사람이 닉네임을 확정 | 닉네임 단계로 이동, 다른 닉네임 안내 |
 | 409 | `PROFILE_ALREADY_ONBOARDED` | 이미 온보딩 완료(중복 탭, 재시도) | 홈으로 이동 |
@@ -140,5 +139,4 @@
 ## 5. 아직 없는 것
 
 - 온보딩 이후 프로필 수정 API(`PATCH /users/me/profile` 예정)
-- 목표 부위/불편 부위 입력
 - 루틴 추천에 프로필 반영(루틴 서비스는 아직 프로필을 읽지 않는다)

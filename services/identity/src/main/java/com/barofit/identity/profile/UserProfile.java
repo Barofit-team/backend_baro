@@ -33,6 +33,7 @@ public class UserProfile {
 	@Column(nullable = false)
 	private Gender gender;
 
+	/** 나이로 입력받아 출생연도로 저장한다. 해가 바뀌면 나이가 따라 오른다 */
 	@Column(nullable = false)
 	private int birthYear;
 
@@ -42,17 +43,9 @@ public class UserProfile {
 	@Column(nullable = false, precision = 4, scale = 1)
 	private BigDecimal weightKg;
 
-	@Column(precision = 4, scale = 1)
-	private BigDecimal skeletalMuscleKg;
-
-	@Column(precision = 3, scale = 1)
-	private BigDecimal bodyFatPercent;
-
-	@ElementCollection(fetch = FetchType.EAGER)
-	@CollectionTable(schema = "identity", name = "user_profile_goals", joinColumns = @JoinColumn(name = "user_id"))
 	@Enumerated(EnumType.STRING)
-	@Column(name = "goal", nullable = false)
-	private Set<ExerciseGoal> goals = EnumSet.noneOf(ExerciseGoal.class);
+	@Column(nullable = false)
+	private ExerciseGoal goal;
 
 	@Enumerated(EnumType.STRING)
 	@Column(nullable = false)
@@ -60,6 +53,13 @@ public class UserProfile {
 
 	@Column(nullable = false)
 	private int weeklyWorkoutDays;
+
+	@ElementCollection(fetch = FetchType.EAGER)
+	@CollectionTable(schema = "identity", name = "user_profile_discomfort_areas",
+			joinColumns = @JoinColumn(name = "user_id"))
+	@Enumerated(EnumType.STRING)
+	@Column(name = "area", nullable = false)
+	private Set<DiscomfortArea> discomfortAreas = EnumSet.noneOf(DiscomfortArea.class);
 
 	@Enumerated(EnumType.STRING)
 	@Column(nullable = false)
@@ -71,21 +71,26 @@ public class UserProfile {
 	@Column(nullable = false)
 	private Instant updatedAt;
 
-	public static UserProfile create(UUID userId, OnboardingCommand command, Instant now) {
+	public static UserProfile create(UUID userId, OnboardingCommand command, int currentYear, Instant now) {
 		UserProfile profile = new UserProfile();
 		profile.userId = userId;
 		profile.gender = command.gender();
-		profile.birthYear = command.birthYear();
+		profile.birthYear = currentYear - command.age();
 		profile.heightCm = command.heightCm();
 		profile.weightKg = command.weightKg();
-		profile.skeletalMuscleKg = command.skeletalMuscleKg();
-		profile.bodyFatPercent = command.bodyFatPercent();
-		profile.goals = EnumSet.copyOf(command.goals());
+		profile.goal = command.goal();
 		profile.experienceLevel = command.experienceLevel();
 		profile.weeklyWorkoutDays = command.weeklyWorkoutDays();
+		profile.discomfortAreas = command.discomfortAreas().isEmpty()
+				? EnumSet.noneOf(DiscomfortArea.class)
+				: EnumSet.copyOf(command.discomfortAreas());
 		profile.coachingStyle = command.coachingStyle();
 		profile.createdAt = now;
 		profile.updatedAt = now;
 		return profile;
+	}
+
+	public int ageIn(int year) {
+		return year - birthYear;
 	}
 }

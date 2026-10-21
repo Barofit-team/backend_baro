@@ -1,11 +1,13 @@
 package com.barofit.identity.profile;
 
-/** 운동 목표(복수 선택) */
+/** 운동 목표(1개 선택) */
 public enum ExerciseGoal {
 	/** 체중 감량 */
 	WEIGHT_LOSS,
-	/** 근육량 증가 */
-	MUSCLE_GAIN,
-	/** 건강관리 */
-	HEALTH_CARE
+	/** 근력 향상 */
+	STRENGTH,
+	/** 체력 증진 */
+	ENDURANCE,
+	/** 자세 교정 */
+	POSTURE
 }

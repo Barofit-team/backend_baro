@@ -11,6 +11,7 @@ import com.barofit.IntegrationTest;
 import com.barofit.TestTokens;
 import com.barofit.common.error.BusinessException;
 import com.barofit.identity.profile.CoachingStyle;
+import com.barofit.identity.profile.DiscomfortArea;
 import com.barofit.identity.profile.ExerciseGoal;
 import com.barofit.identity.profile.ExperienceLevel;
 import com.barofit.identity.profile.Gender;
@@ -23,6 +24,8 @@ import com.barofit.identity.user.UserRepository;
 import com.jayway.jsonpath.JsonPath;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -50,14 +53,13 @@ class OnboardingApiTest {
 			{
 			  "nickname": "바로핏",
 			  "gender": "FEMALE",
-			  "birthYear": 1998,
+			  "age": 29,
 			  "heightCm": 163.5,
 			  "weightKg": 55.2,
-			  "skeletalMuscleKg": 21.3,
-			  "bodyFatPercent": 24.8,
-			  "goals": ["WEIGHT_LOSS", "HEALTH_CARE"],
-			  "experienceLevel": "NONE",
+			  "goal": "WEIGHT_LOSS",
+			  "experienceLevel": "NOVICE",
 			  "weeklyWorkoutDays": 3,
+			  "discomfortAreas": ["BACK", "NECK_SHOULDER"],
 			  "coachingStyle": "FRIENDLY"
 			}""";
 
@@ -75,7 +77,7 @@ class OnboardingApiTest {
 
 	@AfterEach
 	void cleanUp() {
-		jdbcTemplate.execute("TRUNCATE identity.user_profile_goals, identity.user_profiles, identity.refresh_tokens, "
+		jdbcTemplate.execute("TRUNCATE identity.user_profile_discomfort_areas, identity.user_profiles, identity.refresh_tokens, "
 				+ "identity.social_accounts, identity.users");
 	}
 
@@ -100,28 +102,35 @@ class OnboardingApiTest {
 				.andExpect(jsonPath("$.nickname").value("바로핏"))
 				.andExpect(jsonPath("$.isOnboarded").value(true))
 				.andExpect(jsonPath("$.profile.gender").value("FEMALE"))
+				.andExpect(jsonPath("$.profile.age").value(29))
 				.andExpect(jsonPath("$.profile.heightCm").value(163.5))
-				.andExpect(jsonPath("$.profile.skeletalMuscleKg").value(21.3))
-				.andExpect(jsonPath("$.profile.goals.length()").value(2));
+				.andExpect(jsonPath("$.profile.goal").value("WEIGHT_LOSS"))
+				.andExpect(jsonPath("$.profile.discomfortAreas[0]").value("NECK_SHOULDER"))
+				.andExpect(jsonPath("$.profile.discomfortAreas[1]").value("BACK"));
 
 		mockMvc.perform(get("/api/v1/users/me").header("Authorization", bearer(userId)))
 				.andExpect(jsonPath("$.isOnboarded").value(true))
-				.andExpect(jsonPath("$.profile.experienceLevel").value("NONE"))
+				.andExpect(jsonPath("$.profile.age").value(29))
+				.andExpect(jsonPath("$.profile.experienceLevel").value("NOVICE"))
 				.andExpect(jsonPath("$.profile.weeklyWorkoutDays").value(3))
+				.andExpect(jsonPath("$.profile.discomfortAreas.length()").value(2))
 				.andExpect(jsonPath("$.profile.coachingStyle").value("FRIENDLY"));
 		assertThat(jdbcTemplate.queryForObject(
 				"select onboarded from identity.users where id = ?", Boolean.class, userId)).isTrue();
-		assertThat(count("identity.user_profile_goals")).isEqualTo(2);
+		assertThat(jdbcTemplate.queryForObject(
+				"select birth_year from identity.user_profiles where user_id = ?", Integer.class, userId))
+				.isEqualTo(LocalDate.now(ZoneId.of("Asia/Seoul")).getYear() - 29);
+		assertThat(count("identity.user_profile_discomfort_areas")).isEqualTo(2);
 	}
 
 	@Test
-	void 골격근량과_체지방률은_생략할_수_있다() throws Exception {
+	void 불편_부위가_없으면_빈_배열로_보낸다() throws Exception {
 		UUID userId = newUser(null);
 
-		onboard(userId, FULL_REQUEST.replace("\"skeletalMuscleKg\": 21.3,", "").replace("\"bodyFatPercent\": 24.8,", ""))
+		onboard(userId, FULL_REQUEST.replace("[\"BACK\", \"NECK_SHOULDER\"]", "[]"))
 				.andExpect(status().isCreated())
-				.andExpect(jsonPath("$.profile.skeletalMuscleKg").doesNotExist())
-				.andExpect(jsonPath("$.profile.bodyFatPercent").doesNotExist());
+				.andExpect(jsonPath("$.profile.discomfortAreas.length()").value(0));
+		assertThat(count("identity.user_profile_discomfort_areas")).isZero();
 	}
 
 	@Test
@@ -174,16 +183,20 @@ class OnboardingApiTest {
 	void 필수값_누락이나_범위_오류는_400_INVALID_INPUT() throws Exception {
 		UUID userId = newUser(null);
 
-		onboard(userId, FULL_REQUEST.replace("\"goals\": [\"WEIGHT_LOSS\", \"HEALTH_CARE\"]", "\"goals\": []")
-				.replace("\"weeklyWorkoutDays\": 3", "\"weeklyWorkoutDays\": 8")
-				.replace("163.5", "163.55"))
+		onboard(userId, FULL_REQUEST.replace("\"age\": 29", "\"age\": 13")
+				.replace("\"weeklyWorkoutDays\": 3", "\"weeklyWorkoutDays\": 7")
+				.replace("163.5", "163.55")
+				.replace("\"discomfortAreas\": [\"BACK\", \"NECK_SHOULDER\"],", ""))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.code").value("INVALID_INPUT"))
-				.andExpect(jsonPath("$.errors.length()").value(3));
-		onboard(userId, FULL_REQUEST.replace("\"coachingStyle\": \"FRIENDLY\"", "\"coachingStyle\": \"STRICT\""))
+				.andExpect(jsonPath("$.errors.length()").value(4));
+		onboard(userId, FULL_REQUEST.replace("\"coachingStyle\": \"FRIENDLY\"", "\"coachingStyle\": \"GENTLE\""))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.code").value("INVALID_INPUT"));
-		onboard(userId, FULL_REQUEST.replace("21.3", "60.0"))
+		onboard(userId, FULL_REQUEST.replace("\"goal\": \"WEIGHT_LOSS\"", "\"goal\": [\"WEIGHT_LOSS\"]"))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("INVALID_INPUT"));
+		onboard(userId, FULL_REQUEST.replace("\"BACK\"", "\"KNEE\""))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.code").value("INVALID_INPUT"));
 		assertThat(count("identity.user_profiles")).isZero();
@@ -243,7 +256,7 @@ class OnboardingApiTest {
 				.andExpect(status().isNoContent());
 
 		assertThat(count("identity.user_profiles")).isZero();
-		assertThat(count("identity.user_profile_goals")).isZero();
+		assertThat(count("identity.user_profile_discomfort_areas")).isZero();
 		onboard(newUser(null), FULL_REQUEST).andExpect(status().isCreated());
 		mockMvc.perform(get("/api/v1/users/me").header("Authorization", bearer(userId)))
 				.andExpect(status().isUnauthorized())
@@ -281,8 +294,9 @@ class OnboardingApiTest {
 	}
 
 	private static OnboardingCommand command(String nickname) {
-		return new OnboardingCommand(nickname, Gender.MALE, 1995, new BigDecimal("175.0"), new BigDecimal("70.0"),
-				null, null, Set.of(ExerciseGoal.MUSCLE_GAIN), ExperienceLevel.BEGINNER, 4, CoachingStyle.SPARTA);
+		return new OnboardingCommand(nickname, Gender.MALE, 31, new BigDecimal("175.0"), new BigDecimal("70.0"),
+				ExerciseGoal.STRENGTH, ExperienceLevel.BEGINNER, 4, Set.of(DiscomfortArea.ARM_WRIST),
+				CoachingStyle.SPARTA);
 	}
 
 	/** 동시에 실행하고 실패한 예외만 모은다 */

@@ -32,7 +32,7 @@ Google·Kakao 소셜 로그인만 사용하는 회원 체계다. 현재 앱(Expo
 | 다른 도메인용 사용자 조회 | `UserQueryApi.findSummary`, `findSummaries` |
 | 만료 토큰 정리 | 매일 04:00 배치 |
 
-**범위 밖:** 회원 정보·프로필 수정 API, 목표 부위/불편 부위(보류). 앱 연동은 [onboarding-api.md](onboarding-api.md)를 본다.
+**범위 밖:** 회원 정보·프로필 수정 API, 온보딩 후 플랜 생성(루틴 서비스 역할). 앱 연동은 [onboarding-api.md](onboarding-api.md)를 본다.
 
 ---
 
@@ -88,8 +88,8 @@ RFC 9457 Problem Details에 `code`를 더한다. 각 도메인은 `ErrorCode`를
 | `users` | `id`(UUIDv7, 앱에서 생성), `nickname`, `profile_image_url`, `role`, `status`, `onboarded`, `last_login_at`, `withdrawn_at` | role: USER/ADMIN, status: ACTIVE/WITHDRAWN |
 | `social_accounts` | `user_id`, `provider`, `provider_user_id` | `(provider, provider_user_id)` UNIQUE. 동시 가입 판정에 사용 |
 | `refresh_tokens` | `user_id`, `session_id`, `token_hash`(SHA-256 hex), `expires_at`(30일 슬라이딩), `session_expires_at`(90일 절대), `revoked_at` | `token_hash` UNIQUE |
-| `user_profiles` (V2) | `user_id`(PK·FK), `gender`, `birth_year`, `height_cm`, `weight_kg`, `skeletal_muscle_kg`·`body_fat_percent`(선택), `experience_level`, `weekly_workout_days`, `coaching_style` | 값 범위·enum CHECK. 탈퇴 시 삭제 |
-| `user_profile_goals` (V2) | `user_id`, `goal` | PK `(user_id, goal)`, 프로필 삭제 시 CASCADE |
+| `user_profiles` (V2) | `user_id`(PK·FK), `gender`, `birth_year`(나이로 입력받아 변환), `height_cm`, `weight_kg`, `goal`, `experience_level`, `weekly_workout_days`, `coaching_style` | 값 범위·enum CHECK. 탈퇴 시 삭제 |
+| `user_profile_discomfort_areas` (V2) | `user_id`, `area` | PK `(user_id, area)`, 프로필 삭제 시 CASCADE. 해당 없음이면 행 없음 |
 
 - schema 내부에는 FK를 건다.
 - 닉네임 유니크: 부분 유니크 인덱스 `uk_users_nickname_onboarded`(`lower(nickname)`, `onboarded AND status='ACTIVE'`). 온보딩 전 SNS 닉네임끼리는 겹칠 수 있고, 탈퇴하면 닉네임이 지워져 반납된다.
@@ -164,10 +164,11 @@ RFC 9457 Problem Details에 `code`를 더한다. 각 도메인은 `ErrorCode`를
 ### 3.11 온보딩, 정리 배치, 사용자 조회
 - **온보딩:** `ProfileService.onboard`가 한 트랜잭션에서 닉네임 확정, 프로필 저장, `UserAccountService.completeOnboarding(userId)`(`MANDATORY`) 호출을 한다.
   - 사용자 행을 `SELECT ... FOR UPDATE`로 잠가 같은 사용자의 동시 요청을 직렬화한다. 두 번째 요청은 409 `PROFILE_ALREADY_ONBOARDED`.
-  - 닉네임은 미리 조회해 중복이면 409 `PROFILE_NICKNAME_DUPLICATED`. 다른 사용자와 동시에 같은 닉네임을 확정하면 flush 시 유니크 인덱스 위반을 같은 코드로 바꾼다.
+  - 닉네임은 미리 조회해 중복이면 409 `PROFILE_NICKNAME_DUPLICATED`. 다른 사용자와 동시에 같은 닉네임을 확정하면 flush 시 `uk_users_nickname_onboarded` 위반만 같은 코드로 바꾸고, 다른 제약 위반은 그대로 던진다.
+  - 나이는 한국 시간 기준 올해에서 빼 `birth_year`로 저장하고, 응답할 때 다시 나이로 계산한다.
   - 닉네임 규칙(`NicknamePolicy`): 2~10자, 한글(완성형)·영문·숫자. 랜덤 닉네임(`RandomNicknameGenerator`)은 형용사+명사+숫자(1~9999)로 항상 규칙을 만족하고, 사용 중이면 최대 10회 다시 뽑는다. 예약하지 않는다.
-  - 운동 경험 `experience_level`은 루틴 `Difficulty`(BEGINNER/INTERMEDIATE/ADVANCED)에 `NONE`을 더한 값이다. 서비스 간 코드 의존은 없다.
-- **탈퇴와 프로필:** 탈퇴 트랜잭션 안에서 프로필(운동 목표 포함)을 삭제한다.
+  - 운동 경험 `experience_level`은 루틴 `Difficulty`(BEGINNER/INTERMEDIATE/ADVANCED)에 `NOVICE`(입문자)를 더한 값이다. 서비스 간 코드 의존은 없다.
+- **탈퇴와 프로필:** 탈퇴 트랜잭션 안에서 프로필(불편 부위 포함)을 삭제한다.
 - **정리 배치:** 매일 04:00(서버 시간대)에 절대 만료가 지난 Refresh Token 행을 지운다. 폐기된 행을 바로 지우면 재사용 탐지가 동작하지 않으므로 절대 만료 기준으로만 지운다.
 - **사용자 조회:** `findSummary(userId)`는 `Optional<UserSummary(id, nickname, profileImageUrl)>`를 돌려준다. 목록처럼 여러 명이 필요하면 `findSummaries(userIds)`로 한 번에 조회한다. 결과는 ID를 키로 하는 Map이고, 탈퇴했거나 없는 사용자는 빠진다. 서비스 분리 후 HTTP 호출 한 번으로 바뀌는 자리라 단건 조회를 반복하지 않는다.
 
