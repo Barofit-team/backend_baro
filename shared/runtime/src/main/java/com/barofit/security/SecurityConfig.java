@@ -80,7 +80,7 @@ class SecurityConfig {
 		var configuration = new org.springframework.web.cors.CorsConfiguration();
 		configuration.setAllowedOrigins(Arrays.stream(origins.split(","))
 				.map(String::trim).filter(origin -> !origin.isEmpty()).toList());
-		configuration.setAllowedMethods(List.of("GET", "POST", "PATCH", "DELETE", "OPTIONS"));
+		configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
 		configuration.setAllowedHeaders(List.of("Authorization", "Content-Type"));
 		configuration.setExposedHeaders(List.of("Location"));
 		var source = new org.springframework.web.cors.UrlBasedCorsConfigurationSource();

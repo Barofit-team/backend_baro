@@ -22,7 +22,6 @@ import com.barofit.identity.profile.ProfileService;
 import com.barofit.identity.user.User;
 import com.barofit.identity.user.UserRepository;
 import com.jayway.jsonpath.JsonPath;
-import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -54,8 +53,8 @@ class OnboardingApiTest {
 			  "nickname": "바로핏",
 			  "gender": "FEMALE",
 			  "age": 29,
-			  "heightCm": 163.5,
-			  "weightKg": 55.2,
+			  "heightCm": 163,
+			  "weightKg": 55,
 			  "goal": "WEIGHT_LOSS",
 			  "experienceLevel": "NOVICE",
 			  "weeklyWorkoutDays": 3,
@@ -103,7 +102,8 @@ class OnboardingApiTest {
 				.andExpect(jsonPath("$.isOnboarded").value(true))
 				.andExpect(jsonPath("$.profile.gender").value("FEMALE"))
 				.andExpect(jsonPath("$.profile.age").value(29))
-				.andExpect(jsonPath("$.profile.heightCm").value(163.5))
+				.andExpect(jsonPath("$.profile.heightCm").value(163))
+				.andExpect(jsonPath("$.profile.weightKg").value(55))
 				.andExpect(jsonPath("$.profile.goal").value("WEIGHT_LOSS"))
 				.andExpect(jsonPath("$.profile.discomfortAreas[0]").value("NECK_SHOULDER"))
 				.andExpect(jsonPath("$.profile.discomfortAreas[1]").value("BACK"));
@@ -185,7 +185,7 @@ class OnboardingApiTest {
 
 		onboard(userId, FULL_REQUEST.replace("\"age\": 29", "\"age\": 13")
 				.replace("\"weeklyWorkoutDays\": 3", "\"weeklyWorkoutDays\": 7")
-				.replace("163.5", "163.55")
+				.replace("\"heightCm\": 163", "\"heightCm\": 163.5")
 				.replace("\"discomfortAreas\": [\"BACK\", \"NECK_SHOULDER\"],", ""))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.code").value("INVALID_INPUT"))
@@ -200,6 +200,23 @@ class OnboardingApiTest {
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.code").value("INVALID_INPUT"));
 		assertThat(count("identity.user_profiles")).isZero();
+	}
+
+	@Test
+	void 키와_몸무게는_정수만_받는다() throws Exception {
+		UUID userId = newUser(null);
+
+		onboard(userId, FULL_REQUEST.replace("\"weightKg\": 55", "\"weightKg\": 55.2"))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.code").value("INVALID_INPUT"))
+				.andExpect(jsonPath("$.errors[0].field").value("weightKg"));
+		// 163.0처럼 소수점 표기도 받지 않는다
+		onboard(userId, FULL_REQUEST.replace("\"heightCm\": 163", "\"heightCm\": 163.0"))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.errors[0].field").value("heightCm"));
+		onboard(userId, FULL_REQUEST)
+				.andExpect(status().isCreated())
+				.andExpect(jsonPath("$.profile.heightCm").value(163));
 	}
 
 	@Test
@@ -294,7 +311,7 @@ class OnboardingApiTest {
 	}
 
 	private static OnboardingCommand command(String nickname) {
-		return new OnboardingCommand(nickname, Gender.MALE, 31, new BigDecimal("175.0"), new BigDecimal("70.0"),
+		return new OnboardingCommand(nickname, Gender.MALE, 31, 175, 70,
 				ExerciseGoal.STRENGTH, ExperienceLevel.BEGINNER, 4, Set.of(DiscomfortArea.ARM_WRIST),
 				CoachingStyle.SPARTA);
 	}

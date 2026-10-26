@@ -30,6 +30,12 @@ public class User {
 
 	private String profileImageUrl;
 
+	/** 저장소 객체 key. SNS 외부 URL이면 NULL */
+	private String profileImageKey;
+
+	@Enumerated(EnumType.STRING)
+	private ProfileImageSource profileImageSource;
+
 	@Enumerated(EnumType.STRING)
 	@Column(nullable = false)
 	private UserRole role;
@@ -57,6 +63,7 @@ public class User {
 		// 길이를 넘는 URL은 저장하지 않는다
 		user.profileImageUrl = profileImageUrl != null && profileImageUrl.length() <= PROFILE_IMAGE_URL_MAX_LENGTH
 				? profileImageUrl : null;
+		user.profileImageSource = user.profileImageUrl != null ? ProfileImageSource.SOCIAL : null;
 		user.role = UserRole.USER;
 		user.status = UserStatus.ACTIVE;
 		user.onboarded = false;
@@ -82,10 +89,22 @@ public class User {
 		this.updatedAt = now;
 	}
 
+	/** 저장소에 올린 사진으로 바꾼다. @return 이전 저장소 key, 없으면 NULL */
+	public String changeProfileImage(ProfileImageSource source, String key, String url, Instant now) {
+		String previousKey = this.profileImageKey;
+		this.profileImageSource = source;
+		this.profileImageKey = key;
+		this.profileImageUrl = url;
+		this.updatedAt = now;
+		return previousKey;
+	}
+
 	/** 탈퇴. 행은 남기고 개인정보를 익명화한다 */
 	public void withdraw(Instant now) {
 		this.nickname = null;
 		this.profileImageUrl = null;
+		this.profileImageKey = null;
+		this.profileImageSource = null;
 		this.status = UserStatus.WITHDRAWN;
 		this.withdrawnAt = now;
 		this.updatedAt = now;

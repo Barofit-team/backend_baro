@@ -46,6 +46,8 @@ services:
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       KAKAO_REST_API_KEY: ${KAKAO_REST_API_KEY:-}
       KAKAO_CLIENT_SECRET: ${KAKAO_CLIENT_SECRET:-}
+      PROFILE_IMAGE_STORAGE: ${PROFILE_IMAGE_STORAGE:-temporary}
+      PROFILE_IMAGE_PUBLIC_BASE_URL: ${PROFILE_IMAGE_PUBLIC_BASE_URL:-https://temp-storage.barofit.invalid}
     volumes:
       - ./keys:/run/secrets/jwt:ro
     ports:

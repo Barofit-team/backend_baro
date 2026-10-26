@@ -42,8 +42,8 @@
 | `nickname` | string | O | 2~10자, 한글(완성형)·영문·숫자. 공백·특수문자·이모지 불가. 중복은 대소문자 무시 |
 | `gender` | string | O | `MALE`, `FEMALE` |
 | `age` | number | O | 나이. 14 ~ 100 |
-| `heightCm` | number | O | 100.0 ~ 250.0, 소수 첫째 자리까지 |
-| `weightKg` | number | O | 20.0 ~ 300.0, 소수 첫째 자리까지 |
+| `heightCm` | number | O | 100 ~ 250, **정수만**. 소수점 표기(예: 163.5, 163.0)는 400 `INVALID_INPUT` |
+| `weightKg` | number | O | 20 ~ 300, **정수만**. 소수점 표기(예: 55.2, 55.0)는 400 `INVALID_INPUT` |
 | `goal` | string | O | 운동 목표, 1개 선택. `WEIGHT_LOSS`(체중 감량), `STRENGTH`(근력 향상), `ENDURANCE`(체력 증진), `POSTURE`(자세 교정) |
 | `experienceLevel` | string | O | 운동 경험, 1개 선택. `NOVICE`(입문자), `BEGINNER`(초급자), `INTERMEDIATE`(중급자), `ADVANCED`(숙련자). NOVICE 외에는 루틴 난이도(`difficulty`)와 같은 값 |
 | `weeklyWorkoutDays` | number | O | 희망 운동 빈도(주 n회). 2 ~ 6 |
@@ -68,8 +68,8 @@
   "profile": {
     "gender": "FEMALE",
     "age": 29,
-    "heightCm": 163.5,
-    "weightKg": 55.2,
+    "heightCm": 163,
+    "weightKg": 55,
     "goal": "WEIGHT_LOSS",
     "experienceLevel": "NOVICE",
     "weeklyWorkoutDays": 3,
@@ -111,8 +111,8 @@
   "nickname": "바로핏",
   "gender": "FEMALE",
   "age": 29,
-  "heightCm": 163.5,
-  "weightKg": 55.2,
+  "heightCm": 163,
+  "weightKg": 55,
   "goal": "WEIGHT_LOSS",
   "experienceLevel": "NOVICE",
   "weeklyWorkoutDays": 3,
@@ -139,4 +139,5 @@
 ## 5. 아직 없는 것
 
 - 온보딩 이후 프로필 수정 API(`PATCH /users/me/profile` 예정)
+- 프로필 사진 변경 API(`PUT /users/me/profile-image`)는 있지만 앱 UI가 없다. 명세는 [identity-service.md 4.6-1](identity-service.md)
 - 루틴 추천에 프로필 반영(루틴 서비스는 아직 프로필을 읽지 않는다)

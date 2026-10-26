@@ -85,15 +85,16 @@ RFC 9457 Problem Details에 `code`를 더한다. 각 도메인은 `ErrorCode`를
 
 | 테이블 | 주요 컬럼 | 제약 |
 |---|---|---|
-| `users` | `id`(UUIDv7, 앱에서 생성), `nickname`, `profile_image_url`, `role`, `status`, `onboarded`, `last_login_at`, `withdrawn_at` | role: USER/ADMIN, status: ACTIVE/WITHDRAWN |
+| `users` | `id`(UUIDv7, 앱에서 생성), `nickname`, `profile_image_url`, `profile_image_key`·`profile_image_source`(V3), `role`, `status`, `onboarded`, `last_login_at`, `withdrawn_at` | role: USER/ADMIN, status: ACTIVE/WITHDRAWN, profile_image_source: SOCIAL/UPLOADED |
 | `social_accounts` | `user_id`, `provider`, `provider_user_id` | `(provider, provider_user_id)` UNIQUE. 동시 가입 판정에 사용 |
 | `refresh_tokens` | `user_id`, `session_id`, `token_hash`(SHA-256 hex), `expires_at`(30일 슬라이딩), `session_expires_at`(90일 절대), `revoked_at` | `token_hash` UNIQUE |
-| `user_profiles` (V2) | `user_id`(PK·FK), `gender`, `birth_year`(나이로 입력받아 변환), `height_cm`, `weight_kg`, `goal`, `experience_level`, `weekly_workout_days`, `coaching_style` | 값 범위·enum CHECK. 탈퇴 시 삭제 |
+| `user_profiles` (V2) | `user_id`(PK·FK), `gender`, `birth_year`(나이로 입력받아 변환), `height_cm`·`weight_kg`(정수, V4), `goal`, `experience_level`, `weekly_workout_days`, `coaching_style` | 값 범위·enum CHECK. 탈퇴 시 삭제 |
 | `user_profile_discomfort_areas` (V2) | `user_id`, `area` | PK `(user_id, area)`, 프로필 삭제 시 CASCADE. 해당 없음이면 행 없음 |
 
 - schema 내부에는 FK를 건다.
 - 닉네임 유니크: 부분 유니크 인덱스 `uk_users_nickname_onboarded`(`lower(nickname)`, `onboarded AND status='ACTIVE'`). 온보딩 전 SNS 닉네임끼리는 겹칠 수 있고, 탈퇴하면 닉네임이 지워져 반납된다.
 - 닉네임과 프로필 사진은 **가입할 때만** SNS 값으로 채운다. 닉네임은 100자를 넘으면 자르고, 사진 URL은 2048자를 넘으면 저장하지 않는다.
+- 프로필 사진: `profile_image_key`가 있으면 바로핏 저장소 객체이고, 없으면 SNS 외부 URL이다. 자세한 흐름은 3.12.
 
 ### 3.4 바로핏 JWT 발급
 - Access Token: RS256, 헤더에 `kid`, 수명 15분. claim은 `iss=barofit-identity`, `aud=barofit-api`, `sub`(사용자 UUID), `iat`, `exp`, `jti`, `role`. 개인정보는 넣지 않는다.
@@ -143,6 +144,7 @@ RFC 9457 Problem Details에 `code`를 더한다. 각 도메인은 `ErrorCode`를
 3. 없으면 가입한다. 사용자와 소셜 계정을 저장하고 `UserRegistered`를 발행한다.
 4. **동시 최초 가입:** 같은 신규 사용자의 요청이 동시에 오면 한쪽은 UNIQUE 위반이 난다. 바깥에서 예외를 잡고 **새 트랜잭션에서 한 번 다시 조회해** 로그인으로 처리한다.
 5. 로그인할 때마다 새 세션(`session_id`)을 만든다. 여러 기기에서 동시에 로그인할 수 있다.
+6. 가입했으면 커밋 뒤 SNS 사진을 저장소로 옮긴다(3.12). 실패해도 가입 응답은 성공이다.
 
 ### 3.8 Refresh (회전)
 1. 조건부 UPDATE(`revoked_at`이 비어 있고 만료 전인 행만 폐기)를 실행한다. 영향 행이 1이면 이 요청이 회전에 성공한 것이다.
@@ -174,6 +176,21 @@ RFC 9457 Problem Details에 `code`를 더한다. 각 도메인은 `ErrorCode`를
 
 ---
 
+### 3.12 프로필 사진
+
+- **저장소:** `ProfileImageStorage` 인터페이스. `barofit.profile-image.storage`로 구현을 고른다.
+  - `temporary`(기본): **S3 연동 전 임시 구현.** 파일을 보관하지 않고 `{public-base-url}/{key}` 형태의 임시 URL만 돌려준다. 이 URL은 실제로 열리지 않는다.
+  - `s3`: 자리만 있다(`S3ProfileImageStorage`). bucket·region이 없으면 시작하지 않고, 업로드·삭제는 `UnsupportedOperationException`. AWS 구성이 정해지면 구현한다.
+  - key: `profile-images/{userId}/{랜덤 UUID}.{jpg|png|webp}`. 올릴 때마다 새 key라 CDN 캐시가 섞이지 않는다.
+- **가입 시 SNS 사진 가져오기:** 처음 가입한 사용자만 대상이다(기존 회원의 로그인은 건드리지 않는다).
+  1. 가입 트랜잭션은 지금처럼 SNS URL을 `profile_image_url`에, `profile_image_source=SOCIAL`로 저장한다.
+  2. 커밋 뒤 트랜잭션 밖에서 SNS 사진을 내려받는다(`SocialProfileImageFetcher`). https만, 연결 2초·읽기 3초, 5MB 이하, JPEG·PNG·WebP만.
+  3. 저장소에 올리고 `profile_image_key`·`profile_image_url`을 저장소 값으로 바꾼다. 가입 응답의 `user.profileImageUrl`도 바뀐 값이다.
+  4. 내려받기·저장이 실패하면 SNS URL을 그대로 두고(key NULL) 가입은 성공한다.
+- **사용자 변경:** `PUT /api/v1/users/me/profile-image`(4.6-1). 형식은 Content-Type이 아니라 파일 시그니처로 판별한다.
+- **이전 사진 정리:** 교체·탈퇴 트랜잭션이 `ProfileImageDiscarded(key)`를 발행하고, 커밋 뒤(`@TransactionalEventListener`) 저장소에서 지운다. 실패해도 요청은 성공이고 WARN 로그만 남긴다. DB 반영에 실패하면 방금 올린 객체를 지운다.
+- **크기 제한 5MB**를 세 곳에서 맞춘다: `ProfileImageFile.MAX_SIZE`, `spring.servlet.multipart.max-file-size`(요청 전체 6MB), nginx `client_max_body_size 6m`. 어느 단계에서 막혀도 413 `PROFILE_IMAGE_TOO_LARGE`다.
+
 ## 4. API 명세
 
 | Method | Path | 인증 | 성공 |
@@ -187,6 +204,7 @@ RFC 9457 Problem Details에 `code`를 더한다. 각 도메인은 `ErrorCode`를
 | POST | `/api/v1/users/me/onboarding` | Access Token | 201 |
 | GET | `/api/v1/users/nicknames/random` | Access Token | 200 |
 | GET | `/api/v1/users/nicknames/availability` | Access Token | 200 |
+| PUT | `/api/v1/users/me/profile-image` | Access Token | 200 |
 | GET | `/.well-known/jwks.json` | 없음 | 200 |
 
 온보딩·내 정보·닉네임 API의 요청/응답과 앱 흐름은 [onboarding-api.md](onboarding-api.md)에 있다.
@@ -387,6 +405,27 @@ SDK로 받은 **OIDC ID Token**을 검증하고 바로핏 토큰을 발급한다
 { "keys": [ { "kty": "RSA", "use": "sig", "alg": "RS256", "kid": "barofit-202610", "e": "AQAB", "n": "z_ciri3MB6eX81o3..." } ] }
 ```
 
+### 4.6-1 프로필 사진 변경 — `PUT /api/v1/users/me/profile-image`
+
+- Access Token이 필요하다. `Content-Type: multipart/form-data`, 파트 이름은 `file` 하나.
+- JPEG·PNG·WebP, **5MB 이하.** HEIC는 받지 않으므로 앱에서 JPEG로 변환해서 보낸다.
+- 성공하면 `GET /api/v1/users/me`와 같은 형식으로 응답한다. `profileImageUrl`이 새 주소다.
+- S3 연동 전에는 임시 URL(`https://temp-storage.barofit.invalid/profile-images/...`)을 돌려주며 실제로 열리지 않는다.
+- 삭제(기본 이미지로 되돌리기) API는 없다.
+
+```bash
+curl -X PUT -H "Authorization: Bearer $TOKEN" -F "file=@photo.jpg" http://localhost:3002/api/v1/users/me/profile-image
+```
+
+**에러**
+
+| 상태 | code | 상황 | 앱 동작 |
+|---|---|---|---|
+| 400 | `PROFILE_IMAGE_INVALID` | 빈 파일, JPEG·PNG·WebP가 아님 | 다른 사진 선택 |
+| 413 | `PROFILE_IMAGE_TOO_LARGE` | 5MB 초과 | 압축하거나 다른 사진 선택 |
+| 400 | `INVALID_INPUT` | `file` 파트 없음, multipart가 아님 | 요청 수정 |
+| 401 | `AUTH_TOKEN_EXPIRED` / `AUTH_USER_WITHDRAWN` | 토큰 만료 / 탈퇴 | refresh 후 재시도 / 로그인 화면 |
+
 ### 4.7 에러 코드
 
 | code | 상태 | 발생 | 의미 | 앱 동작 |
@@ -403,6 +442,8 @@ SDK로 받은 **OIDC ID Token**을 검증하고 바로핏 토큰을 발급한다
 | `PROFILE_NICKNAME_DUPLICATED` | 409 | 온보딩 | 이미 사용 중인 닉네임 | 다른 닉네임 |
 | `PROFILE_ALREADY_ONBOARDED` | 409 | 온보딩 | 이미 온보딩 완료 | 홈으로 |
 | `PROFILE_NICKNAME_GENERATION_FAILED` | 503 | 랜덤 닉네임 | 생성 실패(사용 중인 값만 뽑힘) | 재시도 또는 직접 입력 |
+| `PROFILE_IMAGE_INVALID` | 400 | 프로필 사진 변경 | 빈 파일, 허용하지 않는 형식 | 다른 사진 선택 |
+| `PROFILE_IMAGE_TOO_LARGE` | 413 | 프로필 사진 변경 | 5MB 초과 | 압축하거나 다른 사진 선택 |
 | `INVALID_INPUT` | 400 | 모든 API | 요청 값 오류 | 요청 수정 |
 | `NOT_FOUND` | 404 | 모든 API | 없는 경로 | - |
 | `METHOD_NOT_ALLOWED` | 405 | 모든 API | 지원하지 않는 메서드 | - |
@@ -450,6 +491,10 @@ API 요청 → 401 AUTH_TOKEN_EXPIRED
 | `SOCIAL_REDIRECT_URIS` | 인가 코드 로그인의 redirect_uri 허용 목록(쉼표 구분). 콘솔 등록값과 같아야 함 | `http://localhost:8081` |
 | `GOOGLE_WEB_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Google 인가 코드 교환(웹 클라이언트 `barofit-web`) | 비어 있음 → Google 코드 로그인 503 |
 | `KAKAO_REST_API_KEY`, `KAKAO_CLIENT_SECRET` | Kakao 인가 코드 교환(REST API 키와 클라이언트 시크릿) | 비어 있음 → Kakao 코드 로그인 503 |
+
+| `PROFILE_IMAGE_STORAGE` | 프로필 사진 저장소. `temporary`(S3 연동 전 임시) 또는 `s3`(미구현) | `temporary` |
+| `PROFILE_IMAGE_PUBLIC_BASE_URL` | 사진 URL 앞부분. S3 연동 시 CloudFront 등 공개 주소 | `https://temp-storage.barofit.invalid` |
+| `PROFILE_IMAGE_S3_BUCKET`, `PROFILE_IMAGE_S3_REGION` | S3 연동 시 사용 | 비어 있음 |
 
 시크릿 두 개는 **서버 `.env`(운영은 Secret)에만** 둔다. 저장소, 앱, 문서에 넣지 않는다.
 

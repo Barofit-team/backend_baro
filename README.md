@@ -66,6 +66,7 @@ RFC 9457 Problem Details 형식에 `code` 속성을 더해 응답합니다. 앱�
 ## 인증 API
 > 상세 명세, 구현 내용, MSA 전환 참고: [docs/identity-service.md](docs/identity-service.md)
 > 온보딩 앱 연동: [docs/onboarding-api.md](docs/onboarding-api.md)
+> 프로필 사진 API(S3 연동 전 임시 저장소): [docs/profile-image-api.md](docs/profile-image-api.md)
 
 | API | 인증 | 설명 |
 |---|---|---|
@@ -78,10 +79,12 @@ RFC 9457 Problem Details 형식에 `code` 속성을 더해 응답합니다. 앱�
 | `POST /api/v1/users/me/onboarding` | Access Token | 온보딩 저장(닉네임·신체 정보·운동 목표/경험/빈도·불편 부위·코칭 스타일). 201 |
 | `GET /api/v1/users/nicknames/random` | Access Token | 사용 가능한 랜덤 닉네임 |
 | `GET /api/v1/users/nicknames/availability?nickname=` | Access Token | 닉네임 사용 가능 여부 |
+| `PUT /api/v1/users/me/profile-image` | Access Token | 프로필 사진 변경(multipart `file`, JPEG·PNG·WebP, 5MB 이하). S3 연동 전에는 임시 URL 반환 |
 | `GET /.well-known/jwks.json` | 없음 | 바로핏 JWT 공개키 |
 
 - `/api/v1/auth/**`에서는 Authorization 헤더를 무시합니다. 만료된 Access Token이 붙어 있어도 refresh할 수 있습니다.
 - 401 `code`: `AUTH_TOKEN_EXPIRED`(refresh 시도), `AUTH_INVALID_TOKEN`·`AUTH_SESSION_REVOKED`·`AUTH_INVALID_REFRESH`·`AUTH_INVALID_ID_TOKEN`(재로그인), `AUTH_USER_WITHDRAWN`(로그인 화면)
+- 처음 가입한 회원은 SNS 프로필 사진을 내려받아 저장소로 옮깁니다. 실패하면 SNS URL을 그대로 씁니다. 저장소는 `PROFILE_IMAGE_STORAGE`(기본 `temporary`: S3 연동 전 임시, 파일 보관 없음)로 고릅니다.
 - 소셜 ID Token의 aud 허용 목록은 `GOOGLE_CLIENT_IDS`, `KAKAO_APP_KEYS`(쉼표 구분)로 설정합니다. 비어 있는 provider의 로그인은 모두 거부됩니다.
 
 ## JWT 키
