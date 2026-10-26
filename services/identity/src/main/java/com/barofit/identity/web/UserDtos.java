@@ -27,13 +27,13 @@ final class UserDtos {
 	private UserDtos() {
 	}
 
-	/** 키·몸무게는 소수점 한 자리까지. 불편 부위가 없으면 빈 배열 */
+	/** 키·몸무게는 정수만(163.5, 163.0처럼 소수점이 있으면 400). 불편 부위가 없으면 빈 배열 */
 	record OnboardingRequest(
 			@NotNull String nickname,
 			@NotNull Gender gender,
 			@NotNull @Min(14) @Max(100) Integer age,
-			@NotNull @DecimalMin("100.0") @DecimalMax("250.0") @Digits(integer = 3, fraction = 1) BigDecimal heightCm,
-			@NotNull @DecimalMin("20.0") @DecimalMax("300.0") @Digits(integer = 3, fraction = 1) BigDecimal weightKg,
+			@NotNull @DecimalMin("100") @DecimalMax("250") @Digits(integer = 3, fraction = 0) BigDecimal heightCm,
+			@NotNull @DecimalMin("20") @DecimalMax("300") @Digits(integer = 3, fraction = 0) BigDecimal weightKg,
 			@NotNull ExerciseGoal goal,
 			@NotNull ExperienceLevel experienceLevel,
 			@NotNull @Min(2) @Max(6) Integer weeklyWorkoutDays,
@@ -41,8 +41,9 @@ final class UserDtos {
 			@NotNull CoachingStyle coachingStyle) {
 
 		OnboardingCommand toCommand() {
-			return new OnboardingCommand(nickname, gender, age, heightCm, weightKg, goal, experienceLevel,
-					weeklyWorkoutDays, discomfortAreas, coachingStyle);
+			// @Digits(fraction = 0)을 통과했으므로 정수로 바꿀 수 있다
+			return new OnboardingCommand(nickname, gender, age, heightCm.intValueExact(), weightKg.intValueExact(),
+					goal, experienceLevel, weeklyWorkoutDays, discomfortAreas, coachingStyle);
 		}
 	}
 
@@ -81,8 +82,8 @@ final class UserDtos {
 	record ProfileResponse(
 			Gender gender,
 			int age,
-			BigDecimal heightCm,
-			BigDecimal weightKg,
+			int heightCm,
+			int weightKg,
 			ExerciseGoal goal,
 			ExperienceLevel experienceLevel,
 			int weeklyWorkoutDays,

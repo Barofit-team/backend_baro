@@ -18,7 +18,11 @@ public enum ProfileErrorCode implements ErrorCode {
 	/** 온보딩을 이미 마침. 앱: 홈 화면 */
 	PROFILE_ALREADY_ONBOARDED(HttpStatus.CONFLICT, "이미 온보딩을 완료했습니다."),
 	/** 랜덤 닉네임 생성 실패. 앱: 재시도 또는 직접 입력 */
-	PROFILE_NICKNAME_GENERATION_FAILED(HttpStatus.SERVICE_UNAVAILABLE, "닉네임을 생성하지 못했습니다. 다시 시도해 주세요.");
+	PROFILE_NICKNAME_GENERATION_FAILED(HttpStatus.SERVICE_UNAVAILABLE, "닉네임을 생성하지 못했습니다. 다시 시도해 주세요."),
+	/** 빈 파일이거나 JPEG·PNG·WebP가 아님. 앱: 다른 사진 선택 */
+	PROFILE_IMAGE_INVALID(HttpStatus.BAD_REQUEST, "JPEG, PNG, WebP 형식의 사진만 올릴 수 있습니다."),
+	/** 크기 제한 초과. 앱: 압축하거나 다른 사진 선택 */
+	PROFILE_IMAGE_TOO_LARGE(HttpStatus.CONTENT_TOO_LARGE, "프로필 사진은 5MB 이하만 올릴 수 있습니다.");
 
 	private final HttpStatus status;
 	private final String message;

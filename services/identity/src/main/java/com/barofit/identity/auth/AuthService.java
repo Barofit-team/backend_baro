@@ -2,6 +2,7 @@ package com.barofit.identity.auth;
 
 import com.barofit.common.error.BusinessException;
 import com.barofit.common.error.CommonErrorCode;
+import com.barofit.identity.image.ProfileImageService;
 import com.barofit.identity.social.SocialAuthorizationCodeClient;
 import com.barofit.identity.social.SocialIdTokenVerifier;
 import com.barofit.identity.social.SocialIdentity;
@@ -31,6 +32,7 @@ public class AuthService {
 	private final SocialAuthorizationCodeClient socialAuthorizationCodeClient;
 	private final SocialLoginProperties socialLoginProperties;
 	private final LoginTransactions loginTransactions;
+	private final ProfileImageService profileImageService;
 	private final RefreshTokenRepository refreshTokenRepository;
 	private final UserRepository userRepository;
 	private final SessionTokens sessionTokens;
@@ -57,13 +59,16 @@ public class AuthService {
 
 	// 동시 가입으로 UNIQUE 위반 시 새 트랜잭션에서 다시 조회한다
 	private LoginResult registerOrLoginConcurrently(SocialIdentity identity) {
+		LoginResult registered;
 		try {
-			return loginTransactions.register(identity);
+			registered = loginTransactions.register(identity);
 		} catch (DataIntegrityViolationException e) {
 			log.info("Concurrent sign-up detected for {}; retrying as login", identity.provider());
 			return loginTransactions.loginExisting(identity)
 					.orElseThrow(() -> new IllegalStateException("가입 충돌 후 재조회에 실패했습니다", e));
 		}
+		// 가입이 커밋된 뒤 SNS 사진을 저장소로 옮긴다. 실패하면 SNS URL을 그대로 쓴다
+		return new LoginResult(registered.tokens(), profileImageService.importSocialImage(registered.user()));
 	}
 
 	/** Refresh Token 회전. 동시 요청 중 하나만 성공한다 */

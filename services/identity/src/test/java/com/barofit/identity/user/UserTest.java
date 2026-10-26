@@ -17,6 +17,31 @@ class UserTest {
 		assertThat(user.getRole()).isEqualTo(UserRole.USER);
 		assertThat(user.isOnboarded()).isFalse();
 		assertThat(user.getLastLoginAt()).isEqualTo(NOW);
+		assertThat(user.getProfileImageSource()).isEqualTo(ProfileImageSource.SOCIAL);
+		assertThat(user.getProfileImageKey()).isNull();
+	}
+
+	@Test
+	void SNS_사진이_없으면_사진_출처도_없다() {
+		User user = User.register("닉네임", null, NOW);
+
+		assertThat(user.getProfileImageUrl()).isNull();
+		assertThat(user.getProfileImageSource()).isNull();
+	}
+
+	@Test
+	void 프로필_사진을_바꾸면_이전_저장소_key를_돌려준다() {
+		User user = User.register("닉네임", "https://example.com/a.png", NOW);
+
+		String first = user.changeProfileImage(ProfileImageSource.SOCIAL, "k1", "https://cdn/k1", NOW.plusSeconds(1));
+		String second = user.changeProfileImage(ProfileImageSource.UPLOADED, "k2", "https://cdn/k2", NOW.plusSeconds(2));
+
+		assertThat(first).isNull();
+		assertThat(second).isEqualTo("k1");
+		assertThat(user.getProfileImageSource()).isEqualTo(ProfileImageSource.UPLOADED);
+		assertThat(user.getProfileImageKey()).isEqualTo("k2");
+		assertThat(user.getProfileImageUrl()).isEqualTo("https://cdn/k2");
+		assertThat(user.getUpdatedAt()).isEqualTo(NOW.plusSeconds(2));
 	}
 
 	@Test
@@ -36,6 +61,8 @@ class UserTest {
 		assertThat(user.getStatus()).isEqualTo(UserStatus.WITHDRAWN);
 		assertThat(user.getNickname()).isNull();
 		assertThat(user.getProfileImageUrl()).isNull();
+		assertThat(user.getProfileImageKey()).isNull();
+		assertThat(user.getProfileImageSource()).isNull();
 		assertThat(user.getWithdrawnAt()).isEqualTo(NOW.plusSeconds(60));
 	}
 
