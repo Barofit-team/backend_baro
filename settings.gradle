@@ -5,3 +5,5 @@ include 'services:identity', 'services:routine'
 include 'integration-tests'
 
 include 'services:analytics'
+
+include 'services:report'

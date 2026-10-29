@@ -1,6 +1,6 @@
-package com.barofit.analytics.service;
+package com.barofit.report.service;
 
-import com.barofit.analytics.repository.ReportRepository;
+import com.barofit.report.repository.ReportRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

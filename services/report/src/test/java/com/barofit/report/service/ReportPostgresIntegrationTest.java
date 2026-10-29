@@ -1,6 +1,6 @@
-package com.barofit.analytics.service;
+package com.barofit.report.service;
 
-import com.barofit.analytics.repository.ReportRepository;
+import com.barofit.report.repository.ReportRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -218,7 +218,7 @@ class ReportPostgresIntegrationTest {
     @org.springframework.context.annotation.Import({
         ReportService.class,
         ReportRepository.class,
-        com.barofit.analytics.config.ReportJacksonConfig.class
+        com.barofit.report.config.ReportJacksonConfig.class
     })
     static class ReportTestApplication {
     }

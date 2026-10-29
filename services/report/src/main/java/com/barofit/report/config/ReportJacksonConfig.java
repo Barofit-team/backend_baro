@@ -1,4 +1,4 @@
-package com.barofit.analytics.config;
+package com.barofit.report.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.context.annotation.Bean;
