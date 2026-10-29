@@ -1,6 +1,6 @@
-package com.barofit.analytics.controller;
+package com.barofit.report.controller;
 
-import com.barofit.analytics.service.ReportService;
+import com.barofit.report.service.ReportService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;

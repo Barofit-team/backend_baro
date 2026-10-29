@@ -1,4 +1,4 @@
-package com.barofit.analytics.repository;
+package com.barofit.report.repository;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.jdbc.core.JdbcTemplate;

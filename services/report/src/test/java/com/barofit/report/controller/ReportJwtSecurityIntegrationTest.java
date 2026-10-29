@@ -1,6 +1,6 @@
-package com.barofit.analytics.controller;
+package com.barofit.report.controller;
 
-import com.barofit.analytics.service.ReportService;
+import com.barofit.report.service.ReportService;
 
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;

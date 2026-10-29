@@ -1,4 +1,4 @@
-package com.barofit.analytics.service;
+package com.barofit.report.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;

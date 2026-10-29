@@ -1,0 +1,25 @@
+spring:
+  application:
+    name: report-service
+  config:
+    import: optional:file:.env[.properties]
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/barofit}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:postgres}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    locations: classpath:db/migration/report
+    table: report_flyway_schema_history
+
+barofit:
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:}
+  jwt:
+    public-jwks-path: ${JWT_PUBLIC_JWKS_PATH:}
+
+server:
+  port: ${REPORT_PORT:3007}
