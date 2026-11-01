@@ -44,6 +44,12 @@ class RoutineApiTests {
                 .header("Access-Control-Request-Headers", "authorization,content-type"))
             .andExpect(status().isOk())
             .andExpect(header().string("Access-Control-Allow-Origin", "http://localhost:8081"));
+        mvc.perform(options("/api/v1/workout-plans/2026-10-19")
+                .header("Origin", "http://localhost:8081")
+                .header("Access-Control-Request-Method", "PUT")
+                .header("Access-Control-Request-Headers", "authorization,content-type"))
+            .andExpect(status().isOk())
+            .andExpect(header().string("Access-Control-Allow-Methods", containsString("PUT")));
         mvc.perform(options("/api/v1/routines")
                 .header("Origin", "https://untrusted.example")
                 .header("Access-Control-Request-Method", "POST"))
@@ -54,26 +60,31 @@ class RoutineApiTests {
     }
 
     @Test
-    void catalogAndNineTemplatesExposeCategoryGuidesAndGoals() throws Exception {
+    void expandedCatalogAndTemplatesExposeCategoryGuidesAndGoals() throws Exception {
         mvc.perform(get("/api/v1/exercises")).andExpect(status().isOk())
-            .andExpect(jsonPath("$[*].id", contains("push-up", "squat", "plank")));
+            .andExpect(jsonPath("$", hasSize(45)))
+            .andExpect(jsonPath("$[*].id", hasItems("push-up", "squat", "plank", "bird-dog", "tuck-jump")));
         mvc.perform(get("/api/v1/exercises/plank")).andExpect(status().isOk())
             .andExpect(jsonPath("$.measurementType").value("DURATION"))
-            .andExpect(jsonPath("$.introTtsText", not(emptyString())));
+            .andExpect(jsonPath("$.introTtsText", not(emptyString())))
+            .andExpect(jsonPath("$.assessmentStatus").value("READY"));
+        mvc.perform(get("/api/v1/exercises/glute-bridge")).andExpect(status().isOk())
+            .andExpect(jsonPath("$.assessmentStatus").value("IN_PROGRESS"));
         mvc.perform(get("/api/v1/routine-templates")).andExpect(status().isOk())
-            .andExpect(jsonPath("$", hasSize(9))).andExpect(jsonPath("$[0].category").value("FULL_BODY"));
-        for (String category : new String[]{"FULL_BODY", "LOWER_BODY", "CORE"}) {
+            .andExpect(jsonPath("$", hasSize(24))).andExpect(jsonPath("$[0].category").value("FULL_BODY"));
+        for (String category : new String[]{"FULL_BODY", "LOWER_BODY", "UPPER_BODY", "BACK", "CORE", "CARDIO"}) {
+            int count = category.equals("LOWER_BODY") || category.equals("CORE") ? 6 : 3;
             mvc.perform(get("/api/v1/routine-templates").param("category", category))
-                .andExpect(status().isOk()).andExpect(jsonPath("$", hasSize(3)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$", hasSize(count)))
                 .andExpect(jsonPath("$[*].category", everyItem(is(category))));
             for (String level : new String[]{"BEGINNER", "INTERMEDIATE", "ADVANCED"}) {
                 mvc.perform(get("/api/v1/routine-templates").param("category", category).param("difficulty", level))
-                    .andExpect(status().isOk()).andExpect(jsonPath("$", hasSize(1)))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$", hasSize(count / 3)))
                     .andExpect(jsonPath("$[0].difficulty").value(level));
             }
         }
         mvc.perform(get("/api/v1/routine-templates").param("difficulty", "BEGINNER"))
-            .andExpect(jsonPath("$", hasSize(3)));
+            .andExpect(jsonPath("$", hasSize(8)));
         mvc.perform(get("/api/v1/routine-templates").param("category", "UNKNOWN"))
             .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_INPUT"));
     }
@@ -147,6 +158,36 @@ class RoutineApiTests {
     }
 
     @Test
+    void restCanChangeAndSimilarExerciseCanReplaceInPlace() throws Exception {
+        String location = createRoutine();
+        String item = itemId(location, 1);
+        ownPatch(location, patchItem(item, "\"restSeconds\":90"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.exercises[1].sets[*].restSeconds", everyItem(is(90))));
+        mvc.perform(get(location + "/exercises/" + item + "/replacements")
+                .header("Authorization", bearer(USER)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[*].id", hasItem("forward-lunge")))
+            .andExpect(jsonPath("$[*].id", not(hasItem("push-up"))));
+        mvc.perform(put(location + "/exercises/" + item + "/replacement")
+                .header("Authorization", bearer(USER)).contentType(APPLICATION_JSON)
+                .content("{\"exerciseId\":\"forward-lunge\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.exercises[1].id").value(item))
+            .andExpect(jsonPath("$.exercises[1].exerciseId").value("forward-lunge"))
+            .andExpect(jsonPath("$.exercises[1].sets[*].targetReps", everyItem(is(15))))
+            .andExpect(jsonPath("$.exercises[1].sets[*].restSeconds", everyItem(is(90))));
+        mvc.perform(put(location + "/exercises/" + item + "/replacement")
+                .header("Authorization", bearer(USER)).contentType(APPLICATION_JSON)
+                .content("{\"exerciseId\":\"push-up\"}"))
+            .andExpect(status().isBadRequest());
+        mvc.perform(put(location + "/exercises/" + item + "/replacement")
+                .header("Authorization", bearer(OTHER)).contentType(APPLICATION_JSON)
+                .content("{\"exerciseId\":\"squat\"}"))
+            .andExpect(status().isNotFound());
+    }
+
+    @Test
     void existingRoutineIsIndependentOfLaterTemplateChanges() throws Exception {
         String location = createRoutine();
         jdbc.update("UPDATE routine.routine SET name = '수정된 템플릿' WHERE id = ?", UUID.fromString(TEMPLATE));
@@ -181,7 +222,7 @@ class RoutineApiTests {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"\"exerciseId\":\"push-up\"", "\"order\":1", "\"weightKg\":10", "\"restSeconds\":0", "\"sets\":[]"})
+    @ValueSource(strings = {"\"exerciseId\":\"push-up\"", "\"order\":1", "\"weightKg\":10", "\"sets\":[]"})
     void rejectsForbiddenNestedFieldsOnCreateAndUpdate(String field) throws Exception {
         create("{\"templateId\":\"" + TEMPLATE + "\",\"exercises\":[{\"templateExerciseId\":\"" + SQUAT + "\",\"setCount\":3," + field + "}]}")
             .andExpect(status().isBadRequest());
@@ -192,7 +233,7 @@ class RoutineApiTests {
     @ParameterizedTest
     @ValueSource(strings = {"\"setCount\":0", "\"setCount\":21", "\"targetReps\":0", "\"targetReps\":-1",
         "\"targetReps\":1.5", "\"setCount\":2.5", "\"setCount\":\"3\"", "\"targetDurationSeconds\":30", "\"targetReps\":10,\"targetDurationSeconds\":30",
-        "\"setCount\":null,\"targetReps\":null"})
+        "\"setCount\":null,\"targetReps\":null", "\"restSeconds\":-1", "\"restSeconds\":601"})
     void rejectsInvalidGoalsInBothRequests(String fields) throws Exception {
         create("{\"templateId\":\"" + TEMPLATE + "\",\"exercises\":[{\"templateExerciseId\":\"" + SQUAT + "\"," + fields + "}]}")
             .andExpect(status().isBadRequest());
@@ -299,6 +340,7 @@ class RoutineApiTests {
 
     @Test
     void jwtAndProblemDetailContractsRemainIntact() throws Exception {
+        mvc.perform(get("/api/v1/routine-templates/recommendations")).andExpect(status().isUnauthorized());
         mvc.perform(get("/api/v1/routines").header("X-Local-User-Id", USER)).andExpect(status().isUnauthorized());
         String expired = TestTokens.accessToken(USER, Instant.now().minusSeconds(3600));
         mvc.perform(get("/api/v1/routines").header("Authorization", "Bearer " + expired))
@@ -321,13 +363,16 @@ class RoutineApiTests {
             .andExpect(jsonPath("$.components.schemas.UpdateRoutineRequest.properties.name").doesNotExist())
             .andExpect(jsonPath("$.components.schemas.TemplateExerciseCustomization.properties.setCount").exists())
             .andExpect(jsonPath("$.components.schemas.RoutineExerciseCustomization.properties.routineExerciseId").exists())
-            .andExpect(jsonPath("$.components.securitySchemes.routineAuth.scheme").value("bearer"));
+            .andExpect(jsonPath("$.components.securitySchemes.routineAuth.scheme").value("bearer"))
+            .andExpect(jsonPath("$.paths['/api/v1/workout-plans'].get").exists())
+            .andExpect(jsonPath("$.paths['/api/v1/workout-plans/{date}'].put").exists())
+            .andExpect(jsonPath("$.paths['/api/v1/workout-plans/today'].get").exists());
         mvc.perform(get("/swagger-ui/index.html")).andExpect(status().isOk());
     }
 
     @Test
     void independentMigrationHistoriesIncludeTemplateCustomization() {
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM routine.flyway_schema_history WHERE success AND version IS NOT NULL", Integer.class)).isEqualTo(4);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM routine.flyway_schema_history WHERE success AND version IS NOT NULL", Integer.class)).isEqualTo(7);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM identity.flyway_schema_history WHERE success AND version IS NOT NULL", Integer.class)).isPositive();
     }
 

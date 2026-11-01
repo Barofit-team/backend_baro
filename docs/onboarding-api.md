@@ -140,4 +140,4 @@
 
 - 온보딩 이후 프로필 수정 API(`PATCH /users/me/profile` 예정)
 - 프로필 사진 변경 API(`PUT /users/me/profile-image`)는 있지만 앱 UI가 없다. 명세는 [identity-service.md 4.6-1](identity-service.md)
-- 루틴 추천에 프로필 반영(루틴 서비스는 아직 프로필을 읽지 않는다)
+- 루틴 추천은 `GET /api/v1/routine-templates/recommendations`에서 저장된 프로필을 읽어 제공한다. 자세한 선정 기준은 [루틴 서비스 문서](routine-service.md#온보딩-기반-추천)를 참고한다.

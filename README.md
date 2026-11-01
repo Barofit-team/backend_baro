@@ -1,6 +1,6 @@
 # barofit-backend
 
-운동 보조 앱 **barofit**의 백엔드. 하나의 저장소에서 인증과 루틴을 각각 독립 Spring Boot 애플리케이션·컨테이너로 빌드합니다. PostgreSQL은 하나를 공유하고 `identity`, `routine` 스키마로 논리적으로 분리합니다.
+운동 보조 앱 **barofit**의 백엔드. 인증·루틴·운동 세션·분석을 각각 독립 Spring Boot 애플리케이션·컨테이너로 빌드합니다. PostgreSQL은 하나를 공유하고 서비스별 스키마로 논리적으로 분리합니다.
 
 ## 커밋 컨벤셜
 - feat: 새로운 기능 개발
@@ -31,23 +31,27 @@ feat(#이슈번호): 로그인 기능 개발
 backend_baro/
 ├─ services/
 │  ├─ identity/         # 인증: 실행 앱, API, 도메인, DB 마이그레이션, 단위 테스트
-│  └─ routine/          # 루틴: 실행 앱, API, 도메인, DB 마이그레이션
+│  ├─ routine/          # 루틴: 실행 앱, API, 도메인, DB 마이그레이션
+│  ├─ workout/          # 운동 세션: 오프라인 동기화, WebSocket 코칭
+│  └─ analytics/        # 운동 기록 조회와 통계
 ├─ shared/
 │  ├─ common/           # 공통 오류 응답과 ModuleSchema 계약
 │  └─ runtime/          # 공통 JWT 검증, Clock, Flyway 실행 설정
 ├─ integration-tests/   # 두 서비스를 함께 띄우는 회귀 테스트, 배포하지 않음
 ├─ deploy/              # Nginx 게이트웨이 설정
 ├─ scripts/             # 개발용 키 생성, 분리 서비스 검증
-├─ compose.yaml         # 두 서비스 + gateway + PostgreSQL
-└─ Dockerfile           # SERVICE_NAME(identity/routine)으로 이미지 선택
+├─ compose.yaml         # 서비스별 컨테이너 + gateway + PostgreSQL
+└─ Dockerfile           # SERVICE_NAME으로 이미지 선택
 ```
 
-`services/identity`와 `services/routine`은 각각 **하나의 실행 가능한 Gradle 모듈**입니다. 자기 서비스 코드와 마이그레이션을 모두 포함하며 서로에게 의존하지 않습니다. 서비스 폴더의 `src/main/java/com/barofit/IdentityApplication.java` 또는 `RoutineApplication.java`가 실행 시작점입니다.
+`services/identity`, `services/routine`, `services/workout`, `services/analytics`는 각각 **하나의 실행 가능한 Gradle 모듈**입니다. 자기 서비스 코드와 마이그레이션을 포함하며 서로에게 의존하지 않습니다.
 
-### 서비스 추가 방법 (예: workout)
+Workout API·WebSocket 명세: [docs/workout-service.md](docs/workout-service.md)
 
-1. `services/workout`에 `build.gradle`, `src/main/java/com/barofit/WorkoutApplication.java`, 도메인 코드와 마이그레이션을 둡니다.
-2. `settings.gradle`에 `include 'services:workout'`을 등록하고 `shared:runtime`에 의존시킵니다.
+### 서비스 추가 방법
+
+1. `services/{서비스명}`에 `build.gradle`, 실행 앱, 도메인 코드와 마이그레이션을 둡니다.
+2. `settings.gradle`에 모듈을 등록하고 `shared:runtime`에 의존시킵니다.
 3. Compose에 별도 컨테이너를 추가하고 게이트웨이 경로를 연결합니다. 다른 서비스 구현 모듈에는 의존하지 않습니다.
 
 
@@ -127,7 +131,7 @@ docker compose up -d postgres
 
 ## Routine Service
 
-운동 3종(푸시업·스쿼트·플랭크), 가이드/TTS 원문, 템플릿 기반 사용자 루틴 CRUD, 난이도별 기본 템플릿 9개를 제공합니다. 사용자는 종목별 세트 수·반복 횟수·유지 시간만 조절할 수 있습니다. `routine` 스키마는 `ModuleSchema`로 등록하여 identity와 별도로 마이그레이션합니다.
+운동 카탈로그 45종, 가이드/TTS 원문, 템플릿 기반 사용자 루틴 CRUD, 난이도별 템플릿 24개, 온보딩 기반 추천과 날짜별 주간 계획을 제공합니다. 종목별 자세 판정 준비 상태를 별도로 표시하며 현재 1차 판정 모듈 검토 완료는 푸시업·스쿼트·플랭크 3종입니다. 사용자는 종목별 세트 수·반복 횟수·유지 시간만 조절할 수 있습니다. `routine` 스키마는 `ModuleSchema`로 등록하여 identity와 별도로 마이그레이션합니다.
 
 - Swagger UI: http://localhost:3002/swagger-ui.html
 - OpenAPI: http://localhost:3002/v3/api-docs
@@ -141,13 +145,16 @@ docker compose up -d postgres
 |---|---|---|---|
 | identity-service | 3004 | identity | identity 코드만 |
 | routine-service | 3005 | routine | routine 코드만 |
+| workout-service | 3006 | workout | 세션·WebSocket 코칭, OpenAI·ElevenLabs |
+| analytics-service | 3007 | analytics | 완료 운동 기록·집계 |
+| report-service | 3008 | report | 자세 리포트·월간 일지·점수·피드백 |
 | gateway | PORT(기본 3002, LAN 접근 가능) | 없음 | HTTP 라우팅 |
 
-게이트웨이는 `/api/v1/auth/**`, `/api/v1/users/**`, `/.well-known/jwks.json`을 인증 서비스로, 운동·루틴 API를 루틴 서비스로 전달합니다. 프론트 `EXPO_PUBLIC_API_URL`은 게이트웨이 주소 하나를 사용합니다. 로컬에서 사용하는 포트는 `.env`의 `PORT`로 지정합니다.
+게이트웨이는 인증·사용자 API를 Identity, 루틴·주간 계획 API를 Routine, 운동 세션·코칭 WebSocket을 Workout, 기록·통계·기존 캘린더 API를 Analytics, `/api/v1/reports`를 Report로 전달합니다. 프론트 `EXPO_PUBLIC_API_URL`은 게이트웨이 주소 하나를 사용합니다. 로컬에서 사용하는 포트는 `.env`의 `PORT`로 지정합니다.
 
-Swagger는 게이트웨이 `/swagger-ui.html`에서 Routine Service / Identity Service를 선택합니다. 원본 명세는 `/v3/api-docs`, `/identity/v3/api-docs`입니다. 직접 포트의 `/actuator/health`로 각 서비스 상태를 확인합니다. 게이트웨이 `/health`는 프록시 자체의 생존 상태만 나타냅니다.
+Swagger는 게이트웨이 `/swagger-ui.html`에서 Routine / Identity / Workout / Analytics / Report Service를 선택합니다. 원본 명세는 `/v3/api-docs`, `/identity/v3/api-docs`, `/workout/v3/api-docs`, `/analytics/v3/api-docs`, `/report/v3/api-docs`입니다. 직접 포트의 `/actuator/health`로 각 서비스 상태를 확인합니다. 게이트웨이 `/health`는 프록시 자체의 생존 상태만 나타냅니다.
 
-각 서비스는 자기 엔티티·리포지토리·Flyway 파일만 포함하며 자기 스키마만 마이그레이션합니다. 기존 DB 볼륨 및 migration 이력은 유지됩니다. 현재 DB 접속 계정은 공유하므로 DB 권한으로 접근을 차단한 구조는 아니며, 서비스 코드에서 다른 스키마를 조회하거나 FK를 만들지 않습니다.
+각 서비스는 자기 엔티티·리포지토리·Flyway 파일만 포함하며 자기 스키마를 소유합니다. Report의 첫 마이그레이션은 기존 Analytics 자세 리포트 데이터를 복사하며 원본은 보존합니다. 기존 DB 볼륨 및 migration 이력도 유지됩니다. 현재 DB 접속 계정은 공유하므로 DB 권한으로 접근을 차단한 구조는 아니며, 런타임 서비스 코드에서 다른 스키마를 조회하거나 FK를 만들지 않습니다.
 
 기존 Spring 이벤트(`UserWithdrawn` 등)는 프로세스 내부 이벤트입니다. 다른 서비스로의 탈퇴 전파/루틴 정리가 필요하면 HTTP 또는 메시지 이벤트 연동을 추가해야 합니다. 현재 즉시 토큰 폐기나 루틴 데이터 삭제 전파는 구현되어 있지 않습니다.
 

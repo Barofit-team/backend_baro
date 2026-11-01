@@ -14,7 +14,7 @@ Java 21과 PostgreSQL이 필요하다. 루트 README와 `.env.example`에 따라
 - OpenAPI JSON: http://localhost:3002/v3/api-docs
 - Swagger **Authorize**에 소셜 로그인 응답의 `accessToken`을 입력한다. Bearer 접두사는 UI가 붙인다.
 - 모든 프로필에서 JWT 인증을 사용한다. 기존 `X-Local-User-Id` 헤더는 더 이상 지원하지 않는다.
-- 운동·템플릿 GET 및 Swagger GET은 공개이며, 만료된 토큰이 붙어도 조회할 수 있다. 사용자 루틴 API는 인증이 필요하다.
+- 운동·템플릿 목록 GET 및 Swagger GET은 공개이며, 만료된 토큰이 붙어도 조회할 수 있다. 추천과 사용자 루틴 API는 인증이 필요하다.
 
 ## 인증 모듈 및 프론트 연동
 
@@ -31,7 +31,7 @@ const templates = await apiFetch('/api/v1/routine-templates?category=FULL_BODY&d
 - 토큰 만료는 `AUTH_TOKEN_EXPIRED`, 없거나 잘못된 토큰은 `AUTH_INVALID_TOKEN`이다. 기존 프론트의 refresh 처리와 연결된다.
 - 사용자 루틴은 ID·소유자·USER 타입을 함께 조회한다. 다른 사용자 루틴과 템플릿에 대한 사용자 CRUD는 404다.
 - `code`로 오류를 구분하고 `detail`을 표시한다. 필드 검증 오류는 `errors`에 포함된다.
-- 로그인 후 루틴 사용에는 온보딩 완료 여부를 추가로 요구하지 않는다. 온보딩 저장 및 자동 로그인 복원은 별도 범위다.
+- 로그인 후 일반 루틴 사용에는 온보딩 완료 여부를 요구하지 않는다. 개인화 추천에는 저장된 온보딩 프로필이 필요하다.
 
 ## ERD
 
@@ -46,7 +46,7 @@ routine.exercise (1) ─── (N) routine.routine_exercise (N) ─── (1) ro
 
 | 테이블 | 주요 필드 및 책임 |
 | --- | --- |
-| exercise | 문자열 ID, 이름, REPS/DURATION, 화면 가이드, intro_tts_text, 활성 여부 |
+| exercise | 문자열 ID, 이름, REPS/DURATION, 부위 분류, 필요 기구, 자세 판정 준비 상태, 화면 가이드, intro_tts_text, 활성 여부 |
 | routine | UUID, owner_user_id, template_id, category, USER/TEMPLATE, 이름, 난이도, 시각, 낙관적 잠금 버전 |
 | routine_exercise | 루틴 FK, 운동 FK, exercise_order |
 | routine_set | 루틴 종목 FK, set_order, target_reps 또는 target_duration_seconds, weight_kg, rest_seconds |
@@ -69,24 +69,36 @@ Base path: `/api/v1`
 | POST | /routines | 201 + Location | 필요 |
 | GET | /routines/{routineId} | 200 | 필요 |
 | PATCH | /routines/{routineId} | 200 | 필요 |
+| GET | /routines/{routineId}/exercises/{routineExerciseId}/replacements | 200 | 필요 |
+| PUT | /routines/{routineId}/exercises/{routineExerciseId}/replacement | 200 | 필요 |
 | DELETE | /routines/{routineId} | 204 | 필요 |
 | GET | /routine-templates | 200 | 공개 |
+| GET | /routine-templates/{templateId} | 200 | 공개 |
+| GET | /routine-templates/recommendations | 200 | 필요 |
+| GET | /workout-plans?weekStart=YYYY-MM-DD | 200 | 필요 |
+| PUT | /workout-plans/{date} | 200 | 필요 |
+| DELETE | /workout-plans/{date} | 204 | 필요 |
+| GET | /workout-plans/{date} | 200 | 필요 |
+| GET | /workout-plans/today | 200 | 필요 |
+| GET | /workout-plans/weekly-progress?weekStart=YYYY-MM-DD | 200 | 필요 |
+| GET | /routines/today | 200 | 필요 |
 
 - 루틴 목록은 생성일과 ID 내림차순이다. 페이지는 0부터, 크기는 1~100이다.
 - 생성은 `templateId`가 필수다. 이름·난이도·종목·순서·무게·휴식은 서버가 템플릿에서 복사한다.
-- 사용자는 종목별 세트 수(1~20), 반복 횟수 또는 유지 시간(양의 정수)만 변경할 수 있다.
+- 사용자는 종목별 세트 수(1~20), 반복 횟수 또는 유지 시간(양의 정수), 세트 후 휴식(0~600초)을 변경할 수 있다.
 - 생성의 `exercises`는 선택 항목이다. 생략/null/빈 배열이면 템플릿 기본값을 그대로 저장한다.
 - 생성 시 `templateExerciseId`는 템플릿 응답 `exercises[].id`, 수정 시 `routineExerciseId`는 **내 루틴 응답** `exercises[].id`다. 운동 코드(`squat` 등)와 다르다.
 - 요청에서 빠진 종목은 유지한다. 전달한 배열 순서로 종목을 재배치하지 않는다.
 - 같은 종목 항목을 중복 지정하거나 다른 템플릿/루틴의 종목 ID를 보내면 400이다.
-- 푸시업·스쿼트는 `targetReps`, 플랭크는 `targetDurationSeconds`만 변경 가능하다. 지정한 목표는 해당 종목의 모든 세트에 동일하게 적용한다.
+- `REPS` 종목은 `targetReps`, `DURATION` 종목은 `targetDurationSeconds`만 변경 가능하다. 지정한 목표와 `restSeconds`는 해당 종목의 모든 세트에 동일하게 적용한다.
 - 항목마다 변경할 값을 하나 이상 전달한다. 생략/null인 값은 유지한다. 세트 수만 늘리면 마지막 기존 세트의 목표·무게·휴식을 복사한다.
-- `name`, `difficulty`, `category`, `exerciseId`, `order`, `sets`, `weightKg`, `restSeconds` 등 허용하지 않는 요청 필드는 400으로 거부한다.
+- `name`, `difficulty`, `category`, `exerciseId`, `order`, `sets`, `weightKg` 등 허용하지 않는 요청 필드는 400으로 거부한다.
 - 저장된 사용자 루틴은 템플릿에서 독립된 스냅샷이다. 이후 원본 템플릿 변경은 이미 저장된 루틴에 반영하지 않는다.
+- 교체 후보는 현재 종목과 운동 분류·측정 방식·필요 기구가 같고 활성화된 종목 중 현재 루틴에 없는 종목이다. `PUT .../replacement` 본문은 `{"exerciseId":"forward-lunge"}`다. 교체해도 루틴 종목 ID, 순서, 세트 ID·수·목표·휴식은 유지되며 운동 가이드와 TTS 문구는 새 종목을 따른다. 이미 시작한 Workout 세션은 기존 스냅샷을 유지한다.
 
 ### 난이도별 기본 템플릿
 
-전신·하체·코어 각각 초급·중급·고급으로 총 9개를 제공한다. 기존 초급 전신 템플릿은 유지하며 V3 마이그레이션에서 8개를 추가한다.
+기존 전신·하체·코어 9개를 유지하고 하체·상체·등·코어·심폐 다양화 템플릿 15개를 추가해 총 24개를 제공한다. 카탈로그에는 목록의 고유 종목 45개가 있으며 신규 종목도 모두 최소 한 템플릿에 포함된다.
 
 | 난이도 | 종목당 세트 | 푸시업 | 스쿼트 | 플랭크 | 세트 후 휴식 |
 | --- | --- | --- | --- | --- | --- |
@@ -96,14 +108,32 @@ Base path: `/api/v1`
 
 - 전신: 푸시업 → 스쿼트 → 플랭크. 하체: 스쿼트. 코어: 플랭크.
 - 모두 무게 0kg이며, 위 수치는 제품의 초기 설정값이다. 사용자는 자신의 루틴으로 저장할 때 조절할 수 있다.
-- `GET /api/v1/routine-templates`는 전체 9개를 반환한다.
-- `GET /api/v1/routine-templates?difficulty=BEGINNER`는 초급 전신·하체·코어 3개를 반환한다. `INTERMEDIATE`, `ADVANCED`도 지원하며 잘못된 값은 400이다.
-- `category=FULL_BODY|LOWER_BODY|CORE` 필터로 전신·하체·코어를 선택한다. category와 difficulty를 함께 전달하면 해당 종류·난이도의 템플릿 1개를 반환한다.
+- `GET /api/v1/routine-templates`는 전체 24개를 반환한다.
+- `GET /api/v1/routine-templates?difficulty=BEGINNER`는 초급 템플릿 8개를 반환한다. `INTERMEDIATE`, `ADVANCED`도 지원하며 잘못된 값은 400이다.
+- `category=FULL_BODY|LOWER_BODY|UPPER_BODY|BACK|CORE|CARDIO`로 필터링한다. 하체·코어는 난이도별 기존 템플릿과 다양화 템플릿이 각각 하나씩 있다.
 - 선택한 템플릿의 `id`를 생성 요청의 `templateId`로 보낸다. 난이도는 원본 템플릿 기준으로 유지하며 사용자가 별도로 수정할 수 없다.
+
+### 온보딩 기반 추천
+
+`GET /api/v1/routine-templates/recommendations`는 JWT가 필요하다. routine 서비스가 같은 JWT로 identity 서비스의 `GET /api/v1/users/me`를 호출해 이미 저장된 프로필을 읽는다. 성별·나이·키·몸무게·코칭 스타일은 임의의 건강 점수로 환산하지 않는다. 목표로 분류 우선순위, 경험과 주간 빈도로 최대 난이도를 정한다. `NOVICE`는 초급으로 매핑하고 주 2회인 숙련자는 최대 중급까지 추천한다.
+
+응답 `recommendations`는 최대 3개이며 각 항목에 전체 `template`, `reason`, `assessmentReady`가 있다. 동일 분류 중복을 줄인 뒤 후보가 부족하면 다른 난이도의 템플릿을 채운다. 불편 부위와 겹치는 분류는 제외한다. 등·허리 불편은 현재 입력만으로 운동 가능 범위를 판정할 수 없어 빈 추천을 반환한다. 후보가 2개 미만이면 억지로 채우지 않고 `notice`로 알린다. 이 필터는 의료 판정이 아니다.
+
+자세 판정 준비 상태 `READY`는 1차 판정 모듈 검토 완료, `IN_PROGRESS`는 작업 중, `PLANNED`는 미완료를 뜻한다. 현재 푸시업·스쿼트·플랭크는 `READY`, 글루트 브리지는 `IN_PROGRESS`, 나머지는 `PLANNED`다. `assessmentReady`는 템플릿의 모든 종목이 READY일 때만 true다. READY 역시 서비스 최종 검증을 뜻하지 않는다. 필요한 기구는 `equipment` (`NONE`, `SUPPORT`, `BAR`, `WALL`)로 내려준다.
 
 ### 프론트 사용자 흐름
 
 루틴 종류 선택 → 난이도 선택 → 템플릿 조회 → 종목별 세트 수·목표 조절 → 내 루틴 저장 → Workout에서 운동 시작.
+
+### 주간 계획과 오늘의 운동
+
+한 사용자에게 날짜당 루틴 1개를 배정한다. 날짜는 `Asia/Seoul` 기준이며 `GET /api/v1/workout-plans?weekStart=2026-10-19`의 `weekStart`는 반드시 월요일이다. 응답에는 배정하지 않은 날까지 월~일 7일이 들어간다. `PUT /api/v1/workout-plans/2026-10-19` 본문은 `{"routineId":"..."}`이며 기본 템플릿과 본인의 사용자 루틴 모두 가능하다. 같은 날짜에 다시 PUT하면 교체하고 DELETE는 빈 날에도 204를 반환한다. 사용자 루틴을 삭제하면 그 루틴을 가리키는 계획도 삭제된다.
+
+`GET /api/v1/workout-plans/today`는 오늘 배정된 루틴의 상세(`routine`)와 종목 순서·세트 목표, 운동 사이 휴식(`steps`)을 반환한다. `GET /api/v1/routines/today`는 같은 응답의 별칭이다. 오늘 계획이 없으면 `routine`, `estimatedMinutes`, `estimatedKcal`은 null이고 `steps`는 빈 배열이다. 운동 시작 시 앱은 `routine` 상세를 Workout API의 `routineSnapshot`으로, `routine.id`를 `routineId`로 보낸다. Workout 서비스는 처음 제출한 스냅샷을 이후 수정할 수 없게 저장하므로 계획을 변경·삭제해도 이미 시작한 운동 기록은 유지된다. 오프라인 운동도 앱이 마지막으로 받은 루틴 상세로 시작한 뒤 동기화할 수 있다.
+
+`GET /api/v1/workout-plans/weekly-progress?weekStart=2026-10-19`는 온보딩의 `weeklyWorkoutDays`를 `weeklyGoal`로, 운동 완료 날짜 수를 `completedCount`로, 목표 범위 내 완료 수를 `goalProgress`로 반환한다. 프런트는 `weeklyGoal` 개수의 점 중 `goalProgress` 개를 활성화하고, `completedDates`에 포함된 날짜에 달력 완료 표시를 한다. 완료 날짜는 Workout 서비스 기록에서 계산한다. 종료된 세션에서 모든 예정 세트를 수행한 종목이 `max(1, round(종목 수 × 0.7))`개 이상이면 세션의 종료일(Asia/Seoul)을 완료로 계산한다. 3종목 루틴은 2종목 완료가 기준이다. 중도 종료 세션도 이 기준에 도달했다면 완료로 계산하며 같은 날 여러 번 운동해도 하루로 센다. 오프라인 운동은 결과 동기화 후 반영된다. 온보딩 전에는 409, Identity 또는 Workout 서비스 조회 실패 시 503을 반환한다.
+
+예상 시간은 반복 1회당 3초, 시간 기반 종목은 목표 초, 마지막 세트 이외의 세트 후 휴식, 종목당 이동 10초를 합산해 분 단위로 올림한다. 예상 칼로리는 identity 프로필의 체중을 읽을 수 있을 때만 반환하며, 운동 시간에는 중강도 맨몸운동 3.8 MET, 고급 심폐 템플릿에는 7.5 MET, 휴식·이동에는 1.3 MET를 가정한다. `kcal = MET × 3.5 × 체중(kg) ÷ 200 × 분`으로 계산한 **계획 추정치**이며 실제 소모량이 아니다. 체중 정보나 identity 서비스가 없으면 칼로리는 null이다. MET 기준은 [2024 Adult Compendium of Physical Activities](https://pacompendium.com/adult-compendium/)를 참고했다.
 
 ```http
 GET /api/v1/routine-templates?category=FULL_BODY&difficulty=BEGINNER

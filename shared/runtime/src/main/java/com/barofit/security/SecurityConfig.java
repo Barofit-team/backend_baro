@@ -45,7 +45,7 @@ class SecurityConfig {
 
 	private static final Duration CLOCK_SKEW = Duration.ofSeconds(60);
 
-	private static final String[] INFRA_PUBLIC_PATHS = {"/actuator/health", "/actuator/health/**", "/error"};
+	private static final String[] INFRA_PUBLIC_PATHS = {"/actuator/health", "/actuator/health/**", "/error", "/ws/coaching"};
     private static final String[] DOCS_PUBLIC_PATHS = {"/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs", "/v3/api-docs/**"};
 
 	@Bean
@@ -81,7 +81,7 @@ class SecurityConfig {
 		configuration.setAllowedOrigins(Arrays.stream(origins.split(","))
 				.map(String::trim).filter(origin -> !origin.isEmpty()).toList());
 		configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-		configuration.setAllowedHeaders(List.of("Authorization", "Content-Type"));
+		configuration.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Workout-Performed-At", "X-Routine-Set-Id"));
 		configuration.setExposedHeaders(List.of("Location"));
 		var source = new org.springframework.web.cors.UrlBasedCorsConfigurationSource();
 		source.registerCorsConfiguration("/api/**", configuration);

@@ -3,15 +3,17 @@ tasks.register('verifyServiceIsolation') {
     dependsOn tasks.named('bootJar')
     doLast {
         def own = project.name
-        def other = own == 'identity' ? 'routine' : 'identity'
+        def others = ['identity', 'routine', 'workout', 'analytics', 'report'].findAll { it != own }
         def artifact = tasks.named('bootJar').get().archiveFile.get().asFile
         new java.util.zip.ZipFile(artifact).withCloseable { zip ->
             def names = zip.entries().collect { it.name }
             if (!names.any { it.startsWith("BOOT-INF/classes/com/barofit/${own}/") }) {
                 throw new GradleException("${project.name}: 자기 서비스 코드가 없습니다")
             }
-            if (names.any { it.startsWith("BOOT-INF/classes/com/barofit/${other}/") }) {
-                throw new GradleException("${project.name}: 다른 서비스 코드가 포함되어 있습니다")
+            for (def other : others) {
+                if (names.any { it.startsWith("BOOT-INF/classes/com/barofit/${other}/") }) {
+                    throw new GradleException("${project.name}: ${other} 서비스 코드가 포함되어 있습니다")
+                }
             }
         }
     }

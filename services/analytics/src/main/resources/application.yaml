@@ -4,7 +4,7 @@ spring:
   config:
     import: optional:file:.env[.properties]
   datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5432/barofit}
+    url: ${ANALYTICS_DB_URL:jdbc:postgresql://localhost:5432/barofit?currentSchema=analytics}
     username: ${DB_USERNAME:postgres}
     password: ${DB_PASSWORD:postgres}
   jpa:
@@ -12,13 +12,16 @@ spring:
     hibernate:
       ddl-auto: validate
   flyway:
-    locations: classpath:db/migration/analytics
-
+    enabled: false
 barofit:
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:}
   jwt:
     public-jwks-path: ${JWT_PUBLIC_JWKS_PATH:}
+  workout:
+    base-url: ${WORKOUT_BASE_URL:http://localhost:3006}
+  analytics:
+    internal-token: ${ANALYTICS_INTERNAL_TOKEN:}
 
 server:
-  port: ${ANALYTICS_PORT:3006}
+  port: ${ANALYTICS_PORT:3007}

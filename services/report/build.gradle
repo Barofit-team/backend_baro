@@ -1,0 +1,20 @@
+plugins { id 'org.springframework.boot' }
+
+dependencies {
+    implementation project(':shared:runtime')
+    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.1.1'
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.18.6'
+    implementation 'org.springframework.boot:spring-boot-starter-flyway'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    runtimeOnly 'org.postgresql:postgresql'
+    runtimeOnly 'org.flywaydb:flyway-database-postgresql'
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
+    testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
+    testImplementation 'org.testcontainers:testcontainers-postgresql'
+    testRuntimeOnly 'com.h2database:h2'
+    testRuntimeOnly 'org.postgresql:postgresql'
+}
+tasks.named('bootJar') { archiveFileName = 'app.jar' }
+tasks.named('bootRun') { workingDir = rootProject.projectDir }
+apply from: rootProject.file('gradle/service-isolation.gradle')
