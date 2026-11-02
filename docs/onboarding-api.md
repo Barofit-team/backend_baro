@@ -34,6 +34,7 @@
 | GET | `/api/v1/users/nicknames/random` | 200 | 사용 가능한 랜덤 닉네임 |
 | GET | `/api/v1/users/nicknames/availability?nickname=` | 200 | 닉네임 사용 가능 여부 |
 | POST | `/api/v1/users/me/onboarding` | 201 | 온보딩 저장. 한 번만 가능 |
+| PATCH | `/api/v1/users/me/profile` | 200 | 온보딩 후 프로필 수정. 보낸 항목만 바뀐다 |
 
 ## 3. 입력 항목과 값
 
@@ -136,8 +137,35 @@
 - 응답이 유실돼 재시도했는데 409 `PROFILE_ALREADY_ONBOARDED`가 오면 이미 저장된 것이므로 홈으로 보내면 된다.
 - 랜덤 닉네임 API는 드물게 503 `PROFILE_NICKNAME_GENERATION_FAILED`를 줄 수 있다. 직접 입력하게 하거나 다시 시도한다.
 
+### 4.5 `PATCH /api/v1/users/me/profile`
+
+온보딩을 마친 사용자의 닉네임·프로필을 바꾼다. 프로필 화면의 항목별 수정에 쓴다.
+
+요청: 3장의 필드 중 **바꿀 항목만** 보낸다. 값 규칙은 온보딩과 같다.
+```json
+{ "weightKg": 52, "coachingStyle": "SPARTA" }
+```
+응답 200: `GET /me`와 같은 형식. 바뀐 값이 반영된 전체 정보를 준다.
+
+- 필드를 빼거나 `null`로 보내면 **바꾸지 않는다.** 모든 필드가 비어 있으면(`{}`) 400 `INVALID_INPUT`이다.
+- `discomfortAreas`는 보낸 목록으로 **통째로 바뀐다.** "해당 없음"으로 바꾸려면 `[]`를 보낸다(`null`은 유지).
+- `age`를 보내면 출생연도를 다시 계산해 저장한다.
+- 닉네임은 온보딩과 같이 중복 확인한다. 자기 닉네임의 대소문자만 바꾸는 것(`BaroFit` → `barofit`)은 허용한다. 바꾸기 전 닉네임은 바로 다른 사람이 쓸 수 있다.
+- 하나라도 실패하면 아무 항목도 바뀌지 않는다.
+- `coachingStyle`은 다음 운동부터(코칭 WebSocket 연결 시점) 반영된다.
+
+에러:
+
+| 상태 | code | 상황 | 앱 동작 |
+|---|---|---|---|
+| 400 | `INVALID_INPUT` | 바꿀 항목 없음, 범위·자릿수 오류, 정의되지 않은 enum 값. 필드 오류는 `errors[{field, message}]` | 해당 입력 수정 |
+| 400 | `PROFILE_NICKNAME_INVALID` | 닉네임 규칙 위반 | 닉네임 입력 안내 |
+| 409 | `PROFILE_NICKNAME_DUPLICATED` | 다른 사람이 쓰는 닉네임 | 다른 닉네임 안내 |
+| 409 | `PROFILE_NOT_ONBOARDED` | 온보딩 전 | 온보딩 화면으로 |
+| 401 | `AUTH_TOKEN_EXPIRED` | Access Token 만료 | refresh 후 재시도 |
+| 401 | `AUTH_USER_WITHDRAWN` | 탈퇴한 사용자 | 토큰 삭제 후 로그인 화면 |
+
 ## 5. 아직 없는 것
 
-- 온보딩 이후 프로필 수정 API(`PATCH /users/me/profile` 예정)
 - 프로필 사진 변경 API(`PUT /users/me/profile-image`)는 있지만 앱 UI가 없다. 명세는 [identity-service.md 4.6-1](identity-service.md)
 - 루틴 추천은 `GET /api/v1/routine-templates/recommendations`에서 저장된 프로필을 읽어 제공한다. 자세한 선정 기준은 [루틴 서비스 문서](routine-service.md#온보딩-기반-추천)를 참고한다.

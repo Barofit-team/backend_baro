@@ -1,6 +1,7 @@
 package com.barofit.identity.profile;
 
 import com.barofit.common.error.BusinessException;
+import com.barofit.common.error.CommonErrorCode;
 import com.barofit.identity.auth.AuthErrorCode;
 import com.barofit.identity.user.User;
 import com.barofit.identity.user.UserAccountService;
@@ -52,15 +53,41 @@ public class ProfileService {
 		user.changeNickname(command.nickname(), now);
 		userAccountService.completeOnboarding(userId);
 		UserProfile profile = userProfileRepository.save(UserProfile.create(userId, command, currentYear, now));
-		try {
-			// 다른 사용자와 같은 닉네임을 동시에 확정하면 유니크 인덱스가 막는다
-			userRepository.flush();
-		} catch (DataIntegrityViolationException e) {
-			if (violates(e, NICKNAME_UNIQUE_INDEX)) {
+		flushNickname();
+		return new MyAccount(user, Optional.of(profile), currentYear);
+	}
+
+	/** 온보딩 후 프로필 부분 수정. 보낸 항목만 바꾼다 */
+	@Transactional
+	public MyAccount updateProfile(UUID userId, ProfileUpdateCommand command) {
+		if (command.isEmpty()) {
+			throw new BusinessException(CommonErrorCode.INVALID_INPUT, "변경할 항목을 하나 이상 보내 주세요.");
+		}
+		if (command.nickname() != null && !NicknamePolicy.isValid(command.nickname())) {
+			throw new BusinessException(ProfileErrorCode.PROFILE_NICKNAME_INVALID);
+		}
+		// 같은 사용자의 동시 수정은 여기서 줄을 선다
+		User user = userRepository.findByIdForUpdate(userId)
+				.filter(User::isActive)
+				.orElseThrow(() -> new BusinessException(AuthErrorCode.AUTH_USER_WITHDRAWN));
+		if (!user.isOnboarded()) {
+			throw new BusinessException(ProfileErrorCode.PROFILE_NOT_ONBOARDED);
+		}
+		UserProfile profile = userProfileRepository.findById(userId)
+				.orElseThrow(() -> new IllegalStateException("온보딩한 사용자의 프로필이 없습니다: " + userId));
+		Instant now = clock.instant();
+		int currentYear = currentYear();
+		// 대소문자만 바꾸는 경우는 자기 닉네임이므로 중복이 아니다
+		if (command.nickname() != null && !command.nickname().equalsIgnoreCase(user.getNickname())) {
+			if (nicknameService.isTaken(command.nickname())) {
 				throw new BusinessException(ProfileErrorCode.PROFILE_NICKNAME_DUPLICATED);
 			}
-			throw e;
 		}
+		if (command.nickname() != null && !command.nickname().equals(user.getNickname())) {
+			user.changeNickname(command.nickname(), now);
+		}
+		profile.update(command, currentYear, now);
+		flushNickname();
 		return new MyAccount(user, Optional.of(profile), currentYear);
 	}
 
@@ -70,6 +97,18 @@ public class ProfileService {
 				.filter(User::isActive)
 				.orElseThrow(() -> new BusinessException(AuthErrorCode.AUTH_USER_WITHDRAWN));
 		return new MyAccount(user, userProfileRepository.findById(userId), currentYear());
+	}
+
+	// 다른 사용자와 같은 닉네임을 동시에 확정하면 유니크 인덱스가 막는다
+	private void flushNickname() {
+		try {
+			userRepository.flush();
+		} catch (DataIntegrityViolationException e) {
+			if (violates(e, NICKNAME_UNIQUE_INDEX)) {
+				throw new BusinessException(ProfileErrorCode.PROFILE_NICKNAME_DUPLICATED);
+			}
+			throw e;
+		}
 	}
 
 	private int currentYear() {

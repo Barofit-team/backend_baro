@@ -8,6 +8,7 @@ import com.barofit.identity.web.UserDtos.MeResponse;
 import com.barofit.identity.web.UserDtos.NicknameAvailabilityResponse;
 import com.barofit.identity.web.UserDtos.NicknameResponse;
 import com.barofit.identity.web.UserDtos.OnboardingRequest;
+import com.barofit.identity.web.UserDtos.ProfileUpdateRequest;
 import jakarta.validation.Valid;
 import java.io.IOException;
 import java.util.UUID;
@@ -18,6 +19,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -48,6 +50,12 @@ class UserController {
 	@ResponseStatus(HttpStatus.CREATED)
 	MeResponse onboard(@AuthenticationPrincipal Jwt jwt, @Valid @RequestBody OnboardingRequest request) {
 		return MeResponse.from(profileService.onboard(userId(jwt), request.toCommand()));
+	}
+
+	/** 온보딩 후 프로필 수정. 보낸 항목만 바꾼다 */
+	@PatchMapping("/me/profile")
+	MeResponse updateProfile(@AuthenticationPrincipal Jwt jwt, @Valid @RequestBody ProfileUpdateRequest request) {
+		return MeResponse.from(profileService.updateProfile(userId(jwt), request.toCommand()));
 	}
 
 	/** 프로필 사진 변경. multipart file 하나(JPEG·PNG·WebP, 5MB 이하) */

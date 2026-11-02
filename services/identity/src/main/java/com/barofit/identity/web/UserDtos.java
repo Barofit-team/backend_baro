@@ -8,6 +8,7 @@ import com.barofit.identity.profile.Gender;
 import com.barofit.identity.profile.MyAccount;
 import com.barofit.identity.profile.NicknameAvailability;
 import com.barofit.identity.profile.OnboardingCommand;
+import com.barofit.identity.profile.ProfileUpdateCommand;
 import com.barofit.identity.profile.UserProfile;
 import com.barofit.identity.user.User;
 import com.barofit.identity.user.UserRole;
@@ -43,6 +44,28 @@ final class UserDtos {
 		OnboardingCommand toCommand() {
 			// @Digits(fraction = 0)을 통과했으므로 정수로 바꿀 수 있다
 			return new OnboardingCommand(nickname, gender, age, heightCm.intValueExact(), weightKg.intValueExact(),
+					goal, experienceLevel, weeklyWorkoutDays, discomfortAreas, coachingStyle);
+		}
+	}
+
+	/** 보낸 항목만 바꾼다(null·생략은 유지). 규칙은 OnboardingRequest와 같다. 불편 부위 "해당 없음"은 빈 배열 */
+	record ProfileUpdateRequest(
+			String nickname,
+			Gender gender,
+			@Min(14) @Max(100) Integer age,
+			@DecimalMin("100") @DecimalMax("250") @Digits(integer = 3, fraction = 0) BigDecimal heightCm,
+			@DecimalMin("20") @DecimalMax("300") @Digits(integer = 3, fraction = 0) BigDecimal weightKg,
+			ExerciseGoal goal,
+			ExperienceLevel experienceLevel,
+			@Min(2) @Max(6) Integer weeklyWorkoutDays,
+			Set<@NotNull DiscomfortArea> discomfortAreas,
+			CoachingStyle coachingStyle) {
+
+		ProfileUpdateCommand toCommand() {
+			// @Digits(fraction = 0)을 통과했으므로 정수로 바꿀 수 있다
+			return new ProfileUpdateCommand(nickname, gender, age,
+					heightCm == null ? null : heightCm.intValueExact(),
+					weightKg == null ? null : weightKg.intValueExact(),
 					goal, experienceLevel, weeklyWorkoutDays, discomfortAreas, coachingStyle);
 		}
 	}

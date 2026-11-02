@@ -81,6 +81,7 @@ RFC 9457 Problem Details 형식에 `code` 속성을 더해 응답합니다. 앱�
 | `DELETE /api/v1/users/me` | Access Token | 탈퇴. 이미 탈퇴했어도 204 |
 | `GET /api/v1/users/me` | Access Token | 내 정보, `isOnboarded`, 온보딩 프로필 |
 | `POST /api/v1/users/me/onboarding` | Access Token | 온보딩 저장(닉네임·신체 정보·운동 목표/경험/빈도·불편 부위·코칭 스타일). 201 |
+| `PATCH /api/v1/users/me/profile` | Access Token | 온보딩 후 프로필 수정. 보낸 항목만 바꾼다. 200 |
 | `GET /api/v1/users/nicknames/random` | Access Token | 사용 가능한 랜덤 닉네임 |
 | `GET /api/v1/users/nicknames/availability?nickname=` | Access Token | 닉네임 사용 가능 여부 |
 | `PUT /api/v1/users/me/profile-image` | Access Token | 프로필 사진 변경(multipart `file`, JPEG·PNG·WebP, 5MB 이하). S3 연동 전에는 임시 URL 반환 |
