@@ -48,6 +48,9 @@ services:
       KAKAO_CLIENT_SECRET: ${KAKAO_CLIENT_SECRET:-}
       PROFILE_IMAGE_STORAGE: ${PROFILE_IMAGE_STORAGE:-temporary}
       PROFILE_IMAGE_PUBLIC_BASE_URL: ${PROFILE_IMAGE_PUBLIC_BASE_URL:-https://temp-storage.barofit.invalid}
+      # storage=s3일 때. 자격 증명은 EC2 인스턴스 프로파일(IMDSv2 hop limit 2 이상) 또는 AWS_* 환경 변수
+      PROFILE_IMAGE_S3_BUCKET: ${PROFILE_IMAGE_S3_BUCKET:-}
+      PROFILE_IMAGE_S3_REGION: ${PROFILE_IMAGE_S3_REGION:-}
     volumes:
       - ./keys:/run/secrets/jwt:ro
     ports:

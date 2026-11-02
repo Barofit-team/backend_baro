@@ -1,0 +1,94 @@
+# EC2 t3.small(2 vCPU, 2GiB) 테스트 서버용 오버라이드. 로컬 compose.yaml 위에 겹쳐 쓴다.
+#   docker compose -f compose.yaml -f compose.ec2.yaml up -d
+#
+# 메모리 예산(2GiB 중 OS·Docker 약 350MiB를 남긴다). 부하 테스트 실측 최대치(anon peak) 기준
+#   identity 320MiB(실측 271), routine 320MiB(실측 285), analytics 288MiB(실측 245) — JPA·Hibernate를 써서 무겁다
+#   workout·report 256MiB(실측 229·234) — JdbcTemplate만 쓴다
+#   PostgreSQL 192MiB, Nginx 32MiB → 합계 1664MiB
+# 여유가 거의 없으므로 서버에 스왑(2GiB)을 꼭 만든다(docs/ec2-test-server.md).
+# EKS로 옮길 때는 mem_limit → resources.limits.memory, cpus → resources.limits.cpu로 그대로 옮긴다.
+
+x-jvm-service: &jvm-service
+  mem_limit: 256m
+  cpus: 1.0
+  logging: &logging
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+x-jvm-environment: &jvm-environment
+  # 실측(identity, NMT): 힙 외 고정분이 약 175MiB
+  #   Metaspace 84 + Symbol 39 + Class 17 + Code 14 + CDS 12 + 기타
+  # 그래서 힙은 한도의 33%(약 95MiB)로 묶고 메타스페이스 상한을 둔다
+  # SerialGC: 코어가 적고 힙이 작을 때 메모리 오버헤드가 가장 작다
+  # TieredStopAtLevel=1: C2 컴파일러를 끄고 메모리·CPU를 아낀다(테스트 서버용 절충)
+  # ExitOnOutOfMemoryError: OOM이면 바로 종료해 restart 정책으로 다시 띄운다
+  JAVA_TOOL_OPTIONS: >-
+    -XX:MaxRAMPercentage=33
+    -XX:+UseSerialGC
+    -XX:TieredStopAtLevel=1
+    -XX:ReservedCodeCacheSize=32m
+    -XX:MaxMetaspaceSize=112m
+    -Xss512k
+    -XX:+ExitOnOutOfMemoryError
+  # glibc malloc 아레나가 스레드마다 늘어나 RSS가 커지는 것을 막는다
+  MALLOC_ARENA_MAX: "2"
+  # DB 연결은 서비스당 최대 4개(5개 서비스 합계 20개)
+  SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: "4"
+  SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE: "1"
+  # 요청 스레드 기본 200개 → 32개
+  SERVER_TOMCAT_THREADS_MAX: "32"
+  SERVER_TOMCAT_THREADS_MIN_SPARE: "2"
+
+services:
+  postgres:
+    mem_limit: 192m
+    cpus: 0.5
+    logging: *logging
+    # 연결 20개 + 관리용 여유. 버퍼는 메모리 한도에 맞춰 줄인다
+    command:
+      - postgres
+      - -c
+      - max_connections=30
+      - -c
+      - shared_buffers=48MB
+      - -c
+      - work_mem=2MB
+      - -c
+      - maintenance_work_mem=32MB
+      - -c
+      - effective_cache_size=128MB
+
+  identity-service:
+    <<: *jvm-service
+    mem_limit: 320m
+    environment:
+      <<: *jvm-environment
+
+  routine-service:
+    <<: *jvm-service
+    mem_limit: 320m
+    environment:
+      <<: *jvm-environment
+
+  workout-service:
+    <<: *jvm-service
+    environment:
+      <<: *jvm-environment
+
+  analytics-service:
+    <<: *jvm-service
+    mem_limit: 288m
+    environment:
+      <<: *jvm-environment
+
+  report-service:
+    <<: *jvm-service
+    environment:
+      <<: *jvm-environment
+
+  gateway:
+    mem_limit: 32m
+    cpus: 0.25
+    logging: *logging

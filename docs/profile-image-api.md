@@ -22,12 +22,18 @@
 ```
 ProfileImageStorage (interface)
  ├─ TemporaryProfileImageStorage   storage=temporary (기본). 파일 보관 없이 key와 임시 URL만 만든다
- └─ S3ProfileImageStorage          storage=s3. 자리만 있음(bucket·region 필수, 호출 시 UnsupportedOperationException)
+ └─ S3ProfileImageStorage          storage=s3. PutObject·DeleteObject(AWS SDK v2, URLConnection HTTP 클라이언트)
 ```
 
 - key: `profile-images/{userId}/{랜덤 UUID}.{jpg|png|webp}`. 올릴 때마다 새 key라 CDN 캐시가 섞이지 않는다.
 - URL: `{public-base-url}/{key}`. 기본값 `https://temp-storage.barofit.invalid`는 **실제로 열리지 않는다**(`.invalid`는 예약 도메인).
-- S3 연동 시 할 일: `S3ProfileImageStorage`에 PutObject·DeleteObject 구현, AWS SDK 의존성 추가, `PROFILE_IMAGE_STORAGE=s3`, `PROFILE_IMAGE_PUBLIC_BASE_URL`을 CloudFront 등 공개 주소로 설정.
+- S3(`storage=s3`):
+  - 업로드: `Content-Type`은 판별한 형식, `Cache-Control: public, max-age=31536000, immutable`(key가 매번 새로 생기므로 영구 캐시 가능). 객체 ACL은 쓰지 않는다.
+  - 읽기 공개는 버킷 정책(`profile-images/*`만 `s3:GetObject` 공개) 또는 CloudFront(OAC)가 맡는다. 앱은 `{public-base-url}/{key}`로 바로 연다.
+  - 자격 증명: AWS 기본 체인. EC2는 인스턴스 프로파일, EKS는 Pod Identity·IRSA. 액세스 키를 설정에 넣지 않는다.
+  - 필요한 IAM 권한: `s3:PutObject`, `s3:DeleteObject` on `arn:aws:s3:::{bucket}/profile-images/*`
+  - 시간 제한: 연결 2초, 소켓 5초, 호출 전체 10초. 가입 시 실패하면 SNS URL을 유지하고, 사용자 변경 시에는 500으로 응답한다.
+  - bucket·region이 없거나 `public-base-url`이 기본값(`.invalid`)이면 시작하지 않는다.
 
 ### 2.2 가입 시 SNS 사진 가져오기
 
@@ -91,9 +97,9 @@ curl -X PUT -H "Authorization: Bearer $TOKEN" -F "file=@photo.jpg" http://localh
 
 | 환경 변수 | 설명 | 기본값 |
 |---|---|---|
-| `PROFILE_IMAGE_STORAGE` | `temporary` 또는 `s3`(미구현) | `temporary` |
-| `PROFILE_IMAGE_PUBLIC_BASE_URL` | 사진 URL 앞부분 | `https://temp-storage.barofit.invalid` |
-| `PROFILE_IMAGE_S3_BUCKET`, `PROFILE_IMAGE_S3_REGION` | S3 연동 시 | 비어 있음 |
+| `PROFILE_IMAGE_STORAGE` | `temporary` 또는 `s3` | `temporary` |
+| `PROFILE_IMAGE_PUBLIC_BASE_URL` | 사진 URL 앞부분. s3이면 버킷 공개 주소나 CloudFront 주소 | `https://temp-storage.barofit.invalid` |
+| `PROFILE_IMAGE_S3_BUCKET`, `PROFILE_IMAGE_S3_REGION` | s3일 때 필수 | 비어 있음 |
 
 `compose.yaml`, `.env.example`에 반영했다.
 
