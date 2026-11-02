@@ -29,6 +29,7 @@ Google·Kakao 소셜 로그인만 사용하는 회원 체계다. 현재 앱(Expo
 | 온보딩(닉네임 확정, 신체 정보·운동 성향 저장) | `POST /api/v1/users/me/onboarding` |
 | 닉네임 랜덤 생성·중복 확인 | `GET /api/v1/users/nicknames/random`, `/availability` |
 | 내 정보 조회 | `GET /api/v1/users/me` |
+| 프로필 수정(온보딩 후, 부분 수정) | `PATCH /api/v1/users/me/profile` |
 | 다른 도메인용 사용자 조회 | `UserQueryApi.findSummary`, `findSummaries` |
 | 만료 토큰 정리 | 매일 04:00 배치 |
 
@@ -180,7 +181,7 @@ RFC 9457 Problem Details에 `code`를 더한다. 각 도메인은 `ErrorCode`를
 
 - **저장소:** `ProfileImageStorage` 인터페이스. `barofit.profile-image.storage`로 구현을 고른다.
   - `temporary`(기본): **S3 연동 전 임시 구현.** 파일을 보관하지 않고 `{public-base-url}/{key}` 형태의 임시 URL만 돌려준다. 이 URL은 실제로 열리지 않는다.
-  - `s3`: 자리만 있다(`S3ProfileImageStorage`). bucket·region이 없으면 시작하지 않고, 업로드·삭제는 `UnsupportedOperationException`. AWS 구성이 정해지면 구현한다.
+  - `s3`: S3 버킷에 저장한다(`S3ProfileImageStorage`). 자격 증명은 AWS 기본 체인(EC2 인스턴스 프로파일, EKS Pod Identity·IRSA). bucket·region이 없거나 `public-base-url`이 기본값이면 시작하지 않는다. 자세한 내용은 [profile-image-api.md](profile-image-api.md).
   - key: `profile-images/{userId}/{랜덤 UUID}.{jpg|png|webp}`. 올릴 때마다 새 key라 CDN 캐시가 섞이지 않는다.
 - **가입 시 SNS 사진 가져오기:** 처음 가입한 사용자만 대상이다(기존 회원의 로그인은 건드리지 않는다).
   1. 가입 트랜잭션은 지금처럼 SNS URL을 `profile_image_url`에, `profile_image_source=SOCIAL`로 저장한다.
@@ -202,12 +203,13 @@ RFC 9457 Problem Details에 `code`를 더한다. 각 도메인은 `ErrorCode`를
 | DELETE | `/api/v1/users/me` | Access Token | 204 |
 | GET | `/api/v1/users/me` | Access Token | 200 |
 | POST | `/api/v1/users/me/onboarding` | Access Token | 201 |
+| PATCH | `/api/v1/users/me/profile` | Access Token | 200 |
 | GET | `/api/v1/users/nicknames/random` | Access Token | 200 |
 | GET | `/api/v1/users/nicknames/availability` | Access Token | 200 |
 | PUT | `/api/v1/users/me/profile-image` | Access Token | 200 |
 | GET | `/.well-known/jwks.json` | 없음 | 200 |
 
-온보딩·내 정보·닉네임 API의 요청/응답과 앱 흐름은 [onboarding-api.md](onboarding-api.md)에 있다.
+온보딩·프로필 수정·내 정보·닉네임 API의 요청/응답과 앱 흐름은 [onboarding-api.md](onboarding-api.md)에 있다.
 
 ### 4.1 공통 규칙
 
@@ -437,10 +439,11 @@ curl -X PUT -H "Authorization: Bearer $TOKEN" -F "file=@photo.jpg" http://localh
 | `AUTH_SOCIAL_PROVIDER_UNAVAILABLE` | 503 | social-login, social-login/code | 소셜 서버 장애·타임아웃, 서버 소셜 설정 오류 | 잠시 후 재시도 |
 | `AUTH_INVALID_REFRESH` | 401 | refresh | Refresh Token 없음·만료 | 재로그인 |
 | `AUTH_SESSION_REVOKED` | 401 | refresh | 세션 폐기(재사용 탐지, 로그아웃한 토큰) | 재로그인 |
-| `AUTH_USER_WITHDRAWN` | 401 | refresh, `/users/me`, 온보딩 | 탈퇴한 사용자 | 로컬 토큰 삭제 후 로그인 화면 |
-| `PROFILE_NICKNAME_INVALID` | 400 | 온보딩 | 닉네임 규칙 위반 | 닉네임 수정 |
-| `PROFILE_NICKNAME_DUPLICATED` | 409 | 온보딩 | 이미 사용 중인 닉네임 | 다른 닉네임 |
+| `AUTH_USER_WITHDRAWN` | 401 | refresh, `/users/me`, 온보딩, 프로필 수정 | 탈퇴한 사용자 | 로컬 토큰 삭제 후 로그인 화면 |
+| `PROFILE_NICKNAME_INVALID` | 400 | 온보딩, 프로필 수정 | 닉네임 규칙 위반 | 닉네임 수정 |
+| `PROFILE_NICKNAME_DUPLICATED` | 409 | 온보딩, 프로필 수정 | 이미 사용 중인 닉네임 | 다른 닉네임 |
 | `PROFILE_ALREADY_ONBOARDED` | 409 | 온보딩 | 이미 온보딩 완료 | 홈으로 |
+| `PROFILE_NOT_ONBOARDED` | 409 | 프로필 수정 | 온보딩 전 | 온보딩 화면으로 |
 | `PROFILE_NICKNAME_GENERATION_FAILED` | 503 | 랜덤 닉네임 | 생성 실패(사용 중인 값만 뽑힘) | 재시도 또는 직접 입력 |
 | `PROFILE_IMAGE_INVALID` | 400 | 프로필 사진 변경 | 빈 파일, 허용하지 않는 형식 | 다른 사진 선택 |
 | `PROFILE_IMAGE_TOO_LARGE` | 413 | 프로필 사진 변경 | 5MB 초과 | 압축하거나 다른 사진 선택 |
@@ -492,9 +495,9 @@ API 요청 → 401 AUTH_TOKEN_EXPIRED
 | `GOOGLE_WEB_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Google 인가 코드 교환(웹 클라이언트 `barofit-web`) | 비어 있음 → Google 코드 로그인 503 |
 | `KAKAO_REST_API_KEY`, `KAKAO_CLIENT_SECRET` | Kakao 인가 코드 교환(REST API 키와 클라이언트 시크릿) | 비어 있음 → Kakao 코드 로그인 503 |
 
-| `PROFILE_IMAGE_STORAGE` | 프로필 사진 저장소. `temporary`(S3 연동 전 임시) 또는 `s3`(미구현) | `temporary` |
+| `PROFILE_IMAGE_STORAGE` | 프로필 사진 저장소. `temporary`(파일 보관 없는 임시) 또는 `s3` | `temporary` |
 | `PROFILE_IMAGE_PUBLIC_BASE_URL` | 사진 URL 앞부분. S3 연동 시 CloudFront 등 공개 주소 | `https://temp-storage.barofit.invalid` |
-| `PROFILE_IMAGE_S3_BUCKET`, `PROFILE_IMAGE_S3_REGION` | S3 연동 시 사용 | 비어 있음 |
+| `PROFILE_IMAGE_S3_BUCKET`, `PROFILE_IMAGE_S3_REGION` | `s3`일 때 필수 | 비어 있음 |
 
 시크릿 두 개는 **서버 `.env`(운영은 Secret)에만** 둔다. 저장소, 앱, 문서에 넣지 않는다.
 

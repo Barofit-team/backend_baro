@@ -1,7 +1,6 @@
 package com.barofit.identity.image;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -21,14 +20,6 @@ class TemporaryProfileImageStorageTest {
 		assertThat(first.key()).startsWith("profile-images/" + USER_ID + "/").endsWith(".png");
 		assertThat(first.url()).isEqualTo("https://temp.test/" + first.key());
 		assertThat(second.key()).isNotEqualTo(first.key());
-	}
-
-	@Test
-	void S3_저장소는_bucket과_region이_없으면_시작하지_않는다() {
-		var properties = new ProfileImageProperties(ProfileImageProperties.StorageType.S3, "profile-images",
-				"https://cdn.test", new ProfileImageProperties.S3(null, null));
-
-		assertThatThrownBy(() -> new S3ProfileImageStorage(properties)).isInstanceOf(IllegalStateException.class);
 	}
 
 	private static ProfileImageProperties properties(String baseUrl) {

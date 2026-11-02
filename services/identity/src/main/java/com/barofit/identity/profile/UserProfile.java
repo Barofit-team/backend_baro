@@ -89,6 +89,40 @@ public class UserProfile {
 		return profile;
 	}
 
+	/** 부분 수정. null인 항목은 그대로 둔다 */
+	void update(ProfileUpdateCommand command, int currentYear, Instant now) {
+		if (command.gender() != null) {
+			gender = command.gender();
+		}
+		if (command.age() != null) {
+			birthYear = currentYear - command.age();
+		}
+		if (command.heightCm() != null) {
+			heightCm = command.heightCm();
+		}
+		if (command.weightKg() != null) {
+			weightKg = command.weightKg();
+		}
+		if (command.goal() != null) {
+			goal = command.goal();
+		}
+		if (command.experienceLevel() != null) {
+			experienceLevel = command.experienceLevel();
+		}
+		if (command.weeklyWorkoutDays() != null) {
+			weeklyWorkoutDays = command.weeklyWorkoutDays();
+		}
+		if (command.discomfortAreas() != null) {
+			// 컬렉션을 바꿔 끼우지 않고 내용만 바꿔야 Hibernate가 변경을 추적한다
+			discomfortAreas.clear();
+			discomfortAreas.addAll(command.discomfortAreas());
+		}
+		if (command.coachingStyle() != null) {
+			coachingStyle = command.coachingStyle();
+		}
+		updatedAt = now;
+	}
+
 	public int ageIn(int year) {
 		return year - birthYear;
 	}

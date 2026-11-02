@@ -7,6 +7,13 @@ dependencies {
     implementation project(':shared:runtime')
     implementation 'org.springframework.security:spring-security-oauth2-jose'
     implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.1.1'
+    // 프로필 사진 S3 저장소. 메모리를 줄이려고 Netty·Apache 대신 JDK URLConnection 클라이언트만 쓴다
+    implementation platform('software.amazon.awssdk:bom:2.57.8')
+    implementation('software.amazon.awssdk:s3') {
+        exclude group: 'software.amazon.awssdk', module: 'netty-nio-client'
+        exclude group: 'software.amazon.awssdk', module: 'apache-client'
+    }
+    implementation 'software.amazon.awssdk:url-connection-client'
 
     testFixturesImplementation 'org.springframework.security:spring-security-oauth2-jose'
     testImplementation 'org.springframework.boot:spring-boot-starter-test'

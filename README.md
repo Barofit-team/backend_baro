@@ -81,14 +81,15 @@ RFC 9457 Problem Details 형식에 `code` 속성을 더해 응답합니다. 앱�
 | `DELETE /api/v1/users/me` | Access Token | 탈퇴. 이미 탈퇴했어도 204 |
 | `GET /api/v1/users/me` | Access Token | 내 정보, `isOnboarded`, 온보딩 프로필 |
 | `POST /api/v1/users/me/onboarding` | Access Token | 온보딩 저장(닉네임·신체 정보·운동 목표/경험/빈도·불편 부위·코칭 스타일). 201 |
+| `PATCH /api/v1/users/me/profile` | Access Token | 온보딩 후 프로필 수정. 보낸 항목만 바꾼다. 200 |
 | `GET /api/v1/users/nicknames/random` | Access Token | 사용 가능한 랜덤 닉네임 |
 | `GET /api/v1/users/nicknames/availability?nickname=` | Access Token | 닉네임 사용 가능 여부 |
-| `PUT /api/v1/users/me/profile-image` | Access Token | 프로필 사진 변경(multipart `file`, JPEG·PNG·WebP, 5MB 이하). S3 연동 전에는 임시 URL 반환 |
+| `PUT /api/v1/users/me/profile-image` | Access Token | 프로필 사진 변경(multipart `file`, JPEG·PNG·WebP, 5MB 이하). `PROFILE_IMAGE_STORAGE=s3`이면 S3에 저장 |
 | `GET /.well-known/jwks.json` | 없음 | 바로핏 JWT 공개키 |
 
 - `/api/v1/auth/**`에서는 Authorization 헤더를 무시합니다. 만료된 Access Token이 붙어 있어도 refresh할 수 있습니다.
 - 401 `code`: `AUTH_TOKEN_EXPIRED`(refresh 시도), `AUTH_INVALID_TOKEN`·`AUTH_SESSION_REVOKED`·`AUTH_INVALID_REFRESH`·`AUTH_INVALID_ID_TOKEN`(재로그인), `AUTH_USER_WITHDRAWN`(로그인 화면)
-- 처음 가입한 회원은 SNS 프로필 사진을 내려받아 저장소로 옮깁니다. 실패하면 SNS URL을 그대로 씁니다. 저장소는 `PROFILE_IMAGE_STORAGE`(기본 `temporary`: S3 연동 전 임시, 파일 보관 없음)로 고릅니다.
+- 처음 가입한 회원은 SNS 프로필 사진을 내려받아 저장소로 옮깁니다. 실패하면 SNS URL을 그대로 씁니다. 저장소는 `PROFILE_IMAGE_STORAGE`(기본 `temporary`: 파일 보관 없는 임시, `s3`: S3 버킷)로 고릅니다. `temporary`에서는 가입자 사진 URL이 열리지 않는 임시 주소로 바뀌므로 서버에서는 `s3`를 씁니다.
 - 소셜 ID Token의 aud 허용 목록은 `GOOGLE_CLIENT_IDS`, `KAKAO_APP_KEYS`(쉼표 구분)로 설정합니다. 비어 있는 provider의 로그인은 모두 거부됩니다.
 
 ## JWT 키
@@ -106,6 +107,8 @@ RFC 9457 Problem Details 형식에 `code` 속성을 더해 응답합니다. 앱�
 - 인증 앱은 시작할 때 개인키와 현재 kid의 공개키가 짝인지 검증합니다. 루틴 앱에는 공개 JWKS만 마운트하며 인증 서비스와 통신하지 않고 JWT 서명을 검증합니다. 파일 기반 공개 키를 교체하면 각 서비스를 재시작해야 합니다.
 
 ## 실행
+> EC2 테스트 서버(t3.small)는 리소스 제한을 겹쳐 실행합니다: `docker compose -f compose.yaml -f compose.ec2.yaml up -d` ([docs/ec2-test-server.md](docs/ec2-test-server.md))
+
 ```bash
 ./scripts/generate-jwt-keys.sh  # 최초 1회. 출력된 JWT_* 값을 .env에 설정
 

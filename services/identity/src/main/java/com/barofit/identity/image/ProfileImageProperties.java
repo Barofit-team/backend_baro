@@ -5,7 +5,8 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
 
 /**
  * 프로필 사진 저장소 설정.
- * storage=temporary는 S3 연동 전 임시 구현으로, 파일을 보관하지 않고 publicBaseUrl 아래의 URL만 만든다.
+ * storage=temporary는 파일을 보관하지 않고 publicBaseUrl 아래의 URL만 만드는 임시 구현, storage=s3는 S3 버킷에 저장한다.
+ * s3이면 publicBaseUrl은 버킷 공개 주소나 CloudFront 주소여야 한다.
  */
 @ConfigurationProperties("barofit.profile-image")
 public record ProfileImageProperties(
@@ -19,7 +20,7 @@ public record ProfileImageProperties(
 		S3
 	}
 
-	/** S3 연동 시 사용. AWS 구성이 정해지면 채운다 */
+	/** storage=s3일 때 필수 */
 	public record S3(String bucket, String region) {
 	}
 }

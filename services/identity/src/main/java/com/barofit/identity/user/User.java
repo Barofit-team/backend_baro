@@ -78,7 +78,7 @@ public class User {
 		this.updatedAt = now;
 	}
 
-	/** 온보딩에서 닉네임 확정. 형식 검증은 호출하는 쪽이 한다 */
+	/** 온보딩·프로필 수정에서 닉네임 확정. 형식·중복 검증은 호출하는 쪽이 한다 */
 	public void changeNickname(String nickname, Instant now) {
 		this.nickname = nickname;
 		this.updatedAt = now;
