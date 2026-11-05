@@ -23,16 +23,21 @@ public class ReportRepository {
         List<Map<String, Object>> rows = jdbc.query(
             """
             SELECT set_id, session_id, user_id,
-                   raw_result::text AS raw_result
+                   raw_result::text AS raw_result, performed_at, routine_set_id
             FROM exercise_set_results
             WHERE set_id = ?
             """,
-            (rs, rowNum) -> Map.<String, Object>of(
-                "setId", rs.getObject("set_id", UUID.class),
-                "sessionId", rs.getObject("session_id", UUID.class),
-                "userId", rs.getObject("user_id", UUID.class),
-                "rawResult", rs.getString("raw_result")
-            ),
+            (rs, rowNum) -> {
+                Map<String, Object> result = new java.util.HashMap<>();
+                result.put("setId", rs.getObject("set_id", UUID.class));
+                result.put("sessionId", rs.getObject("session_id", UUID.class));
+                result.put("userId", rs.getObject("user_id", UUID.class));
+                result.put("rawResult", rs.getString("raw_result"));
+                result.put("routineSetId", rs.getObject("routine_set_id", UUID.class));
+                var time = rs.getTimestamp("performed_at");
+                result.put("performedAt", time == null ? null : time.toInstant());
+                return result;
+            },
             setId
         );
 
@@ -44,7 +49,7 @@ public class ReportRepository {
             String exercise, String engineVersion,
             Double timestampMs, Integer count,
             Double holdSeconds, Double observedSeconds,
-            Double gapSeconds, String rawJson) {
+            Double gapSeconds, java.time.Instant performedAt, String rawJson, UUID routineSetId) {
 
         jdbc.update(
             """
@@ -53,14 +58,31 @@ public class ReportRepository {
                 schema_version, engine_version,
                 frame_timestamp_ms, rep_count,
                 hold_seconds, observed_seconds, gap_seconds,
-                raw_result
+                raw_result, performed_at, routine_set_id
             )
-            VALUES (?, ?, ?, ?, '2.0', ?, ?, ?, ?, ?, ?, CAST(? AS jsonb))
+            VALUES (?, ?, ?, ?, '2.0', ?, ?, ?, ?, ?, ?, CAST(? AS jsonb), ?, ?)
             """,
             setId, sessionId, userId, exercise,
             engineVersion, timestampMs, count,
-            holdSeconds, observedSeconds, gapSeconds, rawJson
+            holdSeconds, observedSeconds, gapSeconds, rawJson,
+            performedAt == null ? null : java.sql.Timestamp.from(performedAt), routineSetId
         );
+    }
+
+    public int bindSet(UUID userId, UUID sessionId, UUID setId, UUID routineSetId) {
+        return jdbc.update("UPDATE exercise_set_results SET routine_set_id=? WHERE user_id=? AND session_id=? AND set_id=? AND routine_set_id IS NULL",
+            routineSetId, userId, sessionId, setId);
+    }
+
+    public record ScoreItem(UUID routineSetId, String itemId, String basis, String unit, double compliant, double warning) { }
+
+    public List<ScoreItem> scoreItems(UUID userId, UUID sessionId) {
+        return jdbc.query("""
+            SELECT s.routine_set_id,p.item_id,p.aggregation_basis,p.unit,p.compliant,p.warning
+            FROM exercise_set_results s LEFT JOIN posture_item_results p ON p.set_id=s.set_id
+            WHERE s.user_id=? AND s.session_id=? AND s.routine_set_id IS NOT NULL
+            """, (rs, row) -> new ScoreItem(rs.getObject("routine_set_id", UUID.class), rs.getString("item_id"),
+                rs.getString("aggregation_basis"), rs.getString("unit"), rs.getDouble("compliant"), rs.getDouble("warning")), userId, sessionId);
     }
 
     public void insertItem(
@@ -196,8 +218,8 @@ public class ReportRepository {
                    COUNT(DISTINCT session_id) AS session_count
             FROM exercise_set_results
             WHERE user_id = ?
-              AND received_at >= ?
-              AND received_at < ?
+              AND COALESCE(performed_at, received_at) >= ?
+              AND COALESCE(performed_at, received_at) < ?
             """,
             (rs, rowNum) -> Map.<String, Object>of(
                 "setCount", rs.getLong("set_count"),

@@ -12,16 +12,11 @@ import org.springframework.web.server.ResponseStatusException;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
+import java.time.Instant;
 import java.util.UUID;
 
 @Service
 public class ReportService {
-
-    private static final Set<String> EXERCISES = Set.of(
-        "pushup", "plank", "bird_dog",
-        "leg_raise", "glute_bridge"
-    );
 
     private final ReportRepository repository;
     private final ObjectMapper mapper;
@@ -82,6 +77,18 @@ public class ReportService {
     public Map<String, Object> saveSet(
             UUID userId, UUID sessionId,
             UUID setId, JsonNode payload) {
+        return saveSet(userId, sessionId, setId, payload, null, null);
+    }
+
+    @Transactional
+    public Map<String, Object> saveSet(
+            UUID userId, UUID sessionId,
+            UUID setId, JsonNode payload, String performedAtHeader) {
+        return saveSet(userId, sessionId, setId, payload, performedAtHeader, null);
+    }
+
+    @Transactional
+    public Map<String, Object> saveSet(UUID userId, UUID sessionId, UUID setId, JsonNode payload, String performedAtHeader, UUID routineSetId) {
 
         if (payload == null || !payload.isObject()) {
             throw bad("Invalid payload");
@@ -94,7 +101,7 @@ public class ReportService {
 
         if (!"2.0".equals(version)
                 || !"set.completed".equals(type)
-                || !EXERCISES.contains(exercise)) {
+                || !exercise.matches("[a-z][a-z0-9_-]{0,49}")) {
             throw bad("Unsupported Pose contract");
         }
 
@@ -115,6 +122,18 @@ public class ReportService {
         Double observed = optionalNumber(summary, "observedSeconds");
         Double gap = optionalNumber(summary, "gapSeconds");
         Double timestamp = optionalNumber(payload, "timestampMs");
+        Instant performedAt = null;
+        String performedAtText = performedAtHeader;
+        if ((performedAtText == null || performedAtText.isBlank()) && payload.hasNonNull("performedAt"))
+            performedAtText = requiredText(payload, "performedAt");
+        if (performedAtText != null && !performedAtText.isBlank()) {
+            try {
+                performedAt = java.time.OffsetDateTime.parse(performedAtText).toInstant()
+                    .truncatedTo(java.time.temporal.ChronoUnit.MICROS);
+            } catch (java.time.format.DateTimeParseException ex) {
+                throw bad("Invalid performedAt");
+            }
+        }
 
         JsonNode items = summary.path("items");
         if (!items.isObject()) {
@@ -132,6 +151,9 @@ public class ReportService {
                 throw new ResponseStatusException(
                     HttpStatus.CONFLICT, "Set ID already used");
             }
+            if (!java.util.Objects.equals(existing.get("performedAt"), performedAt)) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Set ID reused with different performedAt");
+            }
             try {
                 JsonNode oldPayload = mapper.readTree(
                     (String) existing.get("rawResult"));
@@ -144,6 +166,17 @@ public class ReportService {
                 throw new IllegalStateException(
                     "Stored JSON is invalid", ex);
             }
+            UUID previous = (UUID) existing.get("routineSetId");
+            if (routineSetId != null && previous != null && !routineSetId.equals(previous))
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Set ID reused with different routine set");
+            if (routineSetId != null && previous == null) {
+                try {
+                    if (repository.bindSet(userId, sessionId, setId, routineSetId) != 1)
+                        throw new ResponseStatusException(HttpStatus.CONFLICT, "Set binding changed concurrently");
+                } catch (DuplicateKeyException ex) {
+                    throw new ResponseStatusException(HttpStatus.CONFLICT, "Routine set already has a result", ex);
+                }
+            }
             return Map.of(
                 "setId", setId,
                 "sessionId", sessionId,
@@ -155,7 +188,7 @@ public class ReportService {
             repository.insertSet(
                 userId, sessionId, setId, exercise,
                 engineVersion, timestamp, count,
-                hold, observed, gap, payload.toString());
+                hold, observed, gap, performedAt, payload.toString(), routineSetId);
 
             Iterator<Map.Entry<String, JsonNode>> iterator =
                 items.fields();
@@ -233,6 +266,11 @@ public class ReportService {
     }
 
     @Transactional(readOnly = true)
+    public List<ReportRepository.ScoreItem> scoreItems(UUID userId, UUID sessionId) {
+        return repository.scoreItems(userId, sessionId);
+    }
+
+    @Transactional(readOnly = true)
     public List<Map<String, Object>> getSessionSets(
             UUID userId, UUID sessionId) {
         return repository.findSessionSets(userId, sessionId);
@@ -249,11 +287,11 @@ public class ReportService {
             UUID userId, java.time.LocalDate date) {
 
         java.time.Instant from =
-            date.atStartOfDay(java.time.ZoneOffset.UTC).toInstant();
+            date.atStartOfDay(java.time.ZoneId.of("Asia/Seoul")).toInstant();
 
         java.time.Instant until =
             date.plusDays(1)
-                .atStartOfDay(java.time.ZoneOffset.UTC)
+                .atStartOfDay(java.time.ZoneId.of("Asia/Seoul"))
                 .toInstant();
 
         return repository.findPeriodSummary(userId, from, until);
@@ -264,11 +302,11 @@ public class ReportService {
             UUID userId, java.time.LocalDate startDate) {
 
         java.time.Instant from =
-            startDate.atStartOfDay(java.time.ZoneOffset.UTC).toInstant();
+            startDate.atStartOfDay(java.time.ZoneId.of("Asia/Seoul")).toInstant();
 
         java.time.Instant until =
             startDate.plusDays(7)
-                .atStartOfDay(java.time.ZoneOffset.UTC)
+                .atStartOfDay(java.time.ZoneId.of("Asia/Seoul"))
                 .toInstant();
 
         return repository.findPeriodSummary(userId, from, until);

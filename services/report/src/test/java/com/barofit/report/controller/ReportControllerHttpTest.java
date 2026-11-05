@@ -1,11 +1,13 @@
 package com.barofit.report.controller;
 
 import com.barofit.report.service.ReportService;
+import com.barofit.report.service.WorkoutSessionOwnershipClient;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
+import org.springframework.http.converter.StringHttpMessageConverter;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.server.ResponseStatusException;
@@ -24,10 +26,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class ReportControllerHttpTest {
 
     private final ReportService service = mock(ReportService.class);
+    private final WorkoutSessionOwnershipClient ownership = mock(WorkoutSessionOwnershipClient.class);
 
     private final MockMvc mvc = MockMvcBuilders
-        .standaloneSetup(new ReportController(service))
+        .standaloneSetup(new ReportController(service, ownership, new ObjectMapper()))
         .setMessageConverters(
+            new StringHttpMessageConverter(),
             new MappingJackson2HttpMessageConverter(new ObjectMapper())
         )
         .build();
@@ -120,7 +124,7 @@ class ReportControllerHttpTest {
                 eq(userId),
                 eq(sessionId),
                 eq(setId),
-                any(com.fasterxml.jackson.databind.JsonNode.class)
+                any(com.fasterxml.jackson.databind.JsonNode.class), isNull()
             ))
             .thenReturn(Map.of(
                 "setId", setId,
@@ -131,6 +135,7 @@ class ReportControllerHttpTest {
         mvc.perform(
                 post("/api/v1/reports/sessions/" + sessionId + "/sets/" + setId)
                     .principal(principal)
+                    .header("Authorization", "Bearer owner-token")
                     .contentType("application/json")
                     .content(payload)
             )
@@ -141,8 +146,27 @@ class ReportControllerHttpTest {
             eq(userId),
             eq(sessionId),
             eq(setId),
-            any(com.fasterxml.jackson.databind.JsonNode.class)
+            any(com.fasterxml.jackson.databind.JsonNode.class), isNull()
         );
+        verify(ownership).requireOwned(sessionId, "Bearer owner-token");
+    }
+
+    @Test
+    void refusesSetWhenWorkoutDoesNotConfirmOwnership() throws Exception {
+        UUID userId = UUID.randomUUID();
+        UUID sessionId = UUID.randomUUID();
+        UUID setId = UUID.randomUUID();
+        doThrow(new ResponseStatusException(HttpStatus.NOT_FOUND, "Workout session not found"))
+            .when(ownership).requireOwned(sessionId, "Bearer owner-token");
+
+        mvc.perform(post("/api/v1/reports/sessions/" + sessionId + "/sets/" + setId)
+                .principal(() -> userId.toString())
+                .header("Authorization", "Bearer owner-token")
+                .contentType("application/json")
+                .content("{}"))
+            .andExpect(status().isNotFound());
+
+        verifyNoInteractions(service);
     }
 
     @Test
@@ -174,7 +198,7 @@ class ReportControllerHttpTest {
                 eq(userId),
                 eq(sessionId),
                 eq(setId),
-                any(com.fasterxml.jackson.databind.JsonNode.class)
+                any(com.fasterxml.jackson.databind.JsonNode.class), isNull()
             ))
             .thenThrow(new ResponseStatusException(
                 HttpStatus.BAD_REQUEST,
@@ -211,7 +235,7 @@ class ReportControllerHttpTest {
                 eq(userId),
                 eq(sessionId),
                 eq(setId),
-                any(com.fasterxml.jackson.databind.JsonNode.class)
+                any(com.fasterxml.jackson.databind.JsonNode.class), isNull()
             ))
             .thenThrow(new ResponseStatusException(
                 HttpStatus.CONFLICT,

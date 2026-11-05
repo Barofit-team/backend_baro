@@ -1,7 +1,7 @@
 # Identity 서비스 개발 문서
 
 - 작성일: 2026-10-14
-- 이슈: #2 (OAuth2.0 로그인 기능 개발), #5 (로그인 로직 변경: 인가 코드 로그인 추가)
+- 이슈: #2 (OAuth2.0 로그인 기능 개발), #5 (로그인 로직 변경: 인가 코드 로그인 추가), #10 (온보딩)
 - 테스트: `./gradlew build` 기준 90건 통과, 실패 0건
 
 ## 목차
@@ -26,11 +26,14 @@ Google·Kakao 소셜 로그인만 사용하는 회원 체계다. 현재 앱(Expo
 | 로그아웃(현재 기기 세션 폐기) | `POST /api/v1/auth/logout` |
 | 회원 탈퇴(멱등) | `DELETE /api/v1/users/me` |
 | 공개키 노출 | `GET /.well-known/jwks.json` |
-| 온보딩 완료 반영 | `UserAccountService.completeOnboarding` |
+| 온보딩(닉네임 확정, 신체 정보·운동 성향 저장) | `POST /api/v1/users/me/onboarding` |
+| 닉네임 랜덤 생성·중복 확인 | `GET /api/v1/users/nicknames/random`, `/availability` |
+| 내 정보 조회 | `GET /api/v1/users/me` |
+| 프로필 수정(온보딩 후, 부분 수정) | `PATCH /api/v1/users/me/profile` |
 | 다른 도메인용 사용자 조회 | `UserQueryApi.findSummary`, `findSummaries` |
 | 만료 토큰 정리 | 매일 04:00 배치 |
 
-**범위 밖:** 회원 정보 조회·수정 API(`GET /users/me` 등), 사용자 프로필(온보딩) 데이터와 API.
+**범위 밖:** 회원 정보·프로필 수정 API, 온보딩 후 플랜 생성(루틴 서비스 역할). 앱 연동은 [onboarding-api.md](onboarding-api.md)를 본다.
 
 ---
 
@@ -83,12 +86,16 @@ RFC 9457 Problem Details에 `code`를 더한다. 각 도메인은 `ErrorCode`를
 
 | 테이블 | 주요 컬럼 | 제약 |
 |---|---|---|
-| `users` | `id`(UUIDv7, 앱에서 생성), `nickname`, `profile_image_url`, `role`, `status`, `onboarded`, `last_login_at`, `withdrawn_at` | role: USER/ADMIN, status: ACTIVE/WITHDRAWN |
+| `users` | `id`(UUIDv7, 앱에서 생성), `nickname`, `profile_image_url`, `profile_image_key`·`profile_image_source`(V3), `role`, `status`, `onboarded`, `last_login_at`, `withdrawn_at` | role: USER/ADMIN, status: ACTIVE/WITHDRAWN, profile_image_source: SOCIAL/UPLOADED |
 | `social_accounts` | `user_id`, `provider`, `provider_user_id` | `(provider, provider_user_id)` UNIQUE. 동시 가입 판정에 사용 |
 | `refresh_tokens` | `user_id`, `session_id`, `token_hash`(SHA-256 hex), `expires_at`(30일 슬라이딩), `session_expires_at`(90일 절대), `revoked_at` | `token_hash` UNIQUE |
+| `user_profiles` (V2) | `user_id`(PK·FK), `gender`, `birth_year`(나이로 입력받아 변환), `height_cm`·`weight_kg`(정수, V4), `goal`, `experience_level`, `weekly_workout_days`, `coaching_style` | 값 범위·enum CHECK. 탈퇴 시 삭제 |
+| `user_profile_discomfort_areas` (V2) | `user_id`, `area` | PK `(user_id, area)`, 프로필 삭제 시 CASCADE. 해당 없음이면 행 없음 |
 
 - schema 내부에는 FK를 건다.
+- 닉네임 유니크: 부분 유니크 인덱스 `uk_users_nickname_onboarded`(`lower(nickname)`, `onboarded AND status='ACTIVE'`). 온보딩 전 SNS 닉네임끼리는 겹칠 수 있고, 탈퇴하면 닉네임이 지워져 반납된다.
 - 닉네임과 프로필 사진은 **가입할 때만** SNS 값으로 채운다. 닉네임은 100자를 넘으면 자르고, 사진 URL은 2048자를 넘으면 저장하지 않는다.
+- 프로필 사진: `profile_image_key`가 있으면 바로핏 저장소 객체이고, 없으면 SNS 외부 URL이다. 자세한 흐름은 3.12.
 
 ### 3.4 바로핏 JWT 발급
 - Access Token: RS256, 헤더에 `kid`, 수명 15분. claim은 `iss=barofit-identity`, `aud=barofit-api`, `sub`(사용자 UUID), `iat`, `exp`, `jti`, `role`. 개인정보는 넣지 않는다.
@@ -138,6 +145,7 @@ RFC 9457 Problem Details에 `code`를 더한다. 각 도메인은 `ErrorCode`를
 3. 없으면 가입한다. 사용자와 소셜 계정을 저장하고 `UserRegistered`를 발행한다.
 4. **동시 최초 가입:** 같은 신규 사용자의 요청이 동시에 오면 한쪽은 UNIQUE 위반이 난다. 바깥에서 예외를 잡고 **새 트랜잭션에서 한 번 다시 조회해** 로그인으로 처리한다.
 5. 로그인할 때마다 새 세션(`session_id`)을 만든다. 여러 기기에서 동시에 로그인할 수 있다.
+6. 가입했으면 커밋 뒤 SNS 사진을 저장소로 옮긴다(3.12). 실패해도 가입 응답은 성공이다.
 
 ### 3.8 Refresh (회전)
 1. 조건부 UPDATE(`revoked_at`이 비어 있고 만료 전인 행만 폐기)를 실행한다. 영향 행이 1이면 이 요청이 회전에 성공한 것이다.
@@ -157,11 +165,32 @@ RFC 9457 Problem Details에 `code`를 더한다. 각 도메인은 `ErrorCode`를
 - 이미 탈퇴했어도 204다(멱등). 응답이 유실돼 앱이 재시도해도 성공해야 SDK 연결 해제를 건너뛰지 않는다.
 
 ### 3.11 온보딩, 정리 배치, 사용자 조회
-- **온보딩:** 프로필 저장 로직이 `UserAccountService.completeOnboarding(userId)`를 호출하면 같은 트랜잭션 안에서 `onboarded=true`가 된다. 트랜잭션 밖에서 호출하면 실패한다(`MANDATORY`).
+- **온보딩:** `ProfileService.onboard`가 한 트랜잭션에서 닉네임 확정, 프로필 저장, `UserAccountService.completeOnboarding(userId)`(`MANDATORY`) 호출을 한다.
+  - 사용자 행을 `SELECT ... FOR UPDATE`로 잠가 같은 사용자의 동시 요청을 직렬화한다. 두 번째 요청은 409 `PROFILE_ALREADY_ONBOARDED`.
+  - 닉네임은 미리 조회해 중복이면 409 `PROFILE_NICKNAME_DUPLICATED`. 다른 사용자와 동시에 같은 닉네임을 확정하면 flush 시 `uk_users_nickname_onboarded` 위반만 같은 코드로 바꾸고, 다른 제약 위반은 그대로 던진다.
+  - 나이는 한국 시간 기준 올해에서 빼 `birth_year`로 저장하고, 응답할 때 다시 나이로 계산한다.
+  - 닉네임 규칙(`NicknamePolicy`): 2~10자, 한글(완성형)·영문·숫자. 랜덤 닉네임(`RandomNicknameGenerator`)은 형용사+명사+숫자(1~9999)로 항상 규칙을 만족하고, 사용 중이면 최대 10회 다시 뽑는다. 예약하지 않는다.
+  - 운동 경험 `experience_level`은 루틴 `Difficulty`(BEGINNER/INTERMEDIATE/ADVANCED)에 `NOVICE`(입문자)를 더한 값이다. 서비스 간 코드 의존은 없다.
+- **탈퇴와 프로필:** 탈퇴 트랜잭션 안에서 프로필(불편 부위 포함)을 삭제한다.
 - **정리 배치:** 매일 04:00(서버 시간대)에 절대 만료가 지난 Refresh Token 행을 지운다. 폐기된 행을 바로 지우면 재사용 탐지가 동작하지 않으므로 절대 만료 기준으로만 지운다.
 - **사용자 조회:** `findSummary(userId)`는 `Optional<UserSummary(id, nickname, profileImageUrl)>`를 돌려준다. 목록처럼 여러 명이 필요하면 `findSummaries(userIds)`로 한 번에 조회한다. 결과는 ID를 키로 하는 Map이고, 탈퇴했거나 없는 사용자는 빠진다. 서비스 분리 후 HTTP 호출 한 번으로 바뀌는 자리라 단건 조회를 반복하지 않는다.
 
 ---
+
+### 3.12 프로필 사진
+
+- **저장소:** `ProfileImageStorage` 인터페이스. `barofit.profile-image.storage`로 구현을 고른다.
+  - `temporary`(기본): **S3 연동 전 임시 구현.** 파일을 보관하지 않고 `{public-base-url}/{key}` 형태의 임시 URL만 돌려준다. 이 URL은 실제로 열리지 않는다.
+  - `s3`: S3 버킷에 저장한다(`S3ProfileImageStorage`). 자격 증명은 AWS 기본 체인(EC2 인스턴스 프로파일, EKS Pod Identity·IRSA). bucket·region이 없거나 `public-base-url`이 기본값이면 시작하지 않는다. 자세한 내용은 [profile-image-api.md](profile-image-api.md).
+  - key: `profile-images/{userId}/{랜덤 UUID}.{jpg|png|webp}`. 올릴 때마다 새 key라 CDN 캐시가 섞이지 않는다.
+- **가입 시 SNS 사진 가져오기:** 처음 가입한 사용자만 대상이다(기존 회원의 로그인은 건드리지 않는다).
+  1. 가입 트랜잭션은 지금처럼 SNS URL을 `profile_image_url`에, `profile_image_source=SOCIAL`로 저장한다.
+  2. 커밋 뒤 트랜잭션 밖에서 SNS 사진을 내려받는다(`SocialProfileImageFetcher`). https만, 연결 2초·읽기 3초, 5MB 이하, JPEG·PNG·WebP만.
+  3. 저장소에 올리고 `profile_image_key`·`profile_image_url`을 저장소 값으로 바꾼다. 가입 응답의 `user.profileImageUrl`도 바뀐 값이다.
+  4. 내려받기·저장이 실패하면 SNS URL을 그대로 두고(key NULL) 가입은 성공한다.
+- **사용자 변경:** `PUT /api/v1/users/me/profile-image`(4.6-1). 형식은 Content-Type이 아니라 파일 시그니처로 판별한다.
+- **이전 사진 정리:** 교체·탈퇴 트랜잭션이 `ProfileImageDiscarded(key)`를 발행하고, 커밋 뒤(`@TransactionalEventListener`) 저장소에서 지운다. 실패해도 요청은 성공이고 WARN 로그만 남긴다. DB 반영에 실패하면 방금 올린 객체를 지운다.
+- **크기 제한 5MB**를 세 곳에서 맞춘다: `ProfileImageFile.MAX_SIZE`, `spring.servlet.multipart.max-file-size`(요청 전체 6MB), nginx `client_max_body_size 6m`. 어느 단계에서 막혀도 413 `PROFILE_IMAGE_TOO_LARGE`다.
 
 ## 4. API 명세
 
@@ -172,7 +201,15 @@ RFC 9457 Problem Details에 `code`를 더한다. 각 도메인은 `ErrorCode`를
 | POST | `/api/v1/auth/refresh` | 없음 | 200 |
 | POST | `/api/v1/auth/logout` | 없음 | 204 |
 | DELETE | `/api/v1/users/me` | Access Token | 204 |
+| GET | `/api/v1/users/me` | Access Token | 200 |
+| POST | `/api/v1/users/me/onboarding` | Access Token | 201 |
+| PATCH | `/api/v1/users/me/profile` | Access Token | 200 |
+| GET | `/api/v1/users/nicknames/random` | Access Token | 200 |
+| GET | `/api/v1/users/nicknames/availability` | Access Token | 200 |
+| PUT | `/api/v1/users/me/profile-image` | Access Token | 200 |
 | GET | `/.well-known/jwks.json` | 없음 | 200 |
+
+온보딩·프로필 수정·내 정보·닉네임 API의 요청/응답과 앱 흐름은 [onboarding-api.md](onboarding-api.md)에 있다.
 
 ### 4.1 공통 규칙
 
@@ -370,6 +407,27 @@ SDK로 받은 **OIDC ID Token**을 검증하고 바로핏 토큰을 발급한다
 { "keys": [ { "kty": "RSA", "use": "sig", "alg": "RS256", "kid": "barofit-202610", "e": "AQAB", "n": "z_ciri3MB6eX81o3..." } ] }
 ```
 
+### 4.6-1 프로필 사진 변경 — `PUT /api/v1/users/me/profile-image`
+
+- Access Token이 필요하다. `Content-Type: multipart/form-data`, 파트 이름은 `file` 하나.
+- JPEG·PNG·WebP, **5MB 이하.** HEIC는 받지 않으므로 앱에서 JPEG로 변환해서 보낸다.
+- 성공하면 `GET /api/v1/users/me`와 같은 형식으로 응답한다. `profileImageUrl`이 새 주소다.
+- S3 연동 전에는 임시 URL(`https://temp-storage.barofit.invalid/profile-images/...`)을 돌려주며 실제로 열리지 않는다.
+- 삭제(기본 이미지로 되돌리기) API는 없다.
+
+```bash
+curl -X PUT -H "Authorization: Bearer $TOKEN" -F "file=@photo.jpg" http://localhost:3002/api/v1/users/me/profile-image
+```
+
+**에러**
+
+| 상태 | code | 상황 | 앱 동작 |
+|---|---|---|---|
+| 400 | `PROFILE_IMAGE_INVALID` | 빈 파일, JPEG·PNG·WebP가 아님 | 다른 사진 선택 |
+| 413 | `PROFILE_IMAGE_TOO_LARGE` | 5MB 초과 | 압축하거나 다른 사진 선택 |
+| 400 | `INVALID_INPUT` | `file` 파트 없음, multipart가 아님 | 요청 수정 |
+| 401 | `AUTH_TOKEN_EXPIRED` / `AUTH_USER_WITHDRAWN` | 토큰 만료 / 탈퇴 | refresh 후 재시도 / 로그인 화면 |
+
 ### 4.7 에러 코드
 
 | code | 상태 | 발생 | 의미 | 앱 동작 |
@@ -381,7 +439,14 @@ SDK로 받은 **OIDC ID Token**을 검증하고 바로핏 토큰을 발급한다
 | `AUTH_SOCIAL_PROVIDER_UNAVAILABLE` | 503 | social-login, social-login/code | 소셜 서버 장애·타임아웃, 서버 소셜 설정 오류 | 잠시 후 재시도 |
 | `AUTH_INVALID_REFRESH` | 401 | refresh | Refresh Token 없음·만료 | 재로그인 |
 | `AUTH_SESSION_REVOKED` | 401 | refresh | 세션 폐기(재사용 탐지, 로그아웃한 토큰) | 재로그인 |
-| `AUTH_USER_WITHDRAWN` | 401 | refresh (이후 `/users/me` 조회 계열) | 탈퇴한 사용자 | 로컬 토큰 삭제 후 로그인 화면 |
+| `AUTH_USER_WITHDRAWN` | 401 | refresh, `/users/me`, 온보딩, 프로필 수정 | 탈퇴한 사용자 | 로컬 토큰 삭제 후 로그인 화면 |
+| `PROFILE_NICKNAME_INVALID` | 400 | 온보딩, 프로필 수정 | 닉네임 규칙 위반 | 닉네임 수정 |
+| `PROFILE_NICKNAME_DUPLICATED` | 409 | 온보딩, 프로필 수정 | 이미 사용 중인 닉네임 | 다른 닉네임 |
+| `PROFILE_ALREADY_ONBOARDED` | 409 | 온보딩 | 이미 온보딩 완료 | 홈으로 |
+| `PROFILE_NOT_ONBOARDED` | 409 | 프로필 수정 | 온보딩 전 | 온보딩 화면으로 |
+| `PROFILE_NICKNAME_GENERATION_FAILED` | 503 | 랜덤 닉네임 | 생성 실패(사용 중인 값만 뽑힘) | 재시도 또는 직접 입력 |
+| `PROFILE_IMAGE_INVALID` | 400 | 프로필 사진 변경 | 빈 파일, 허용하지 않는 형식 | 다른 사진 선택 |
+| `PROFILE_IMAGE_TOO_LARGE` | 413 | 프로필 사진 변경 | 5MB 초과 | 압축하거나 다른 사진 선택 |
 | `INVALID_INPUT` | 400 | 모든 API | 요청 값 오류 | 요청 수정 |
 | `NOT_FOUND` | 404 | 모든 API | 없는 경로 | - |
 | `METHOD_NOT_ALLOWED` | 405 | 모든 API | 지원하지 않는 메서드 | - |
@@ -430,6 +495,10 @@ API 요청 → 401 AUTH_TOKEN_EXPIRED
 | `GOOGLE_WEB_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Google 인가 코드 교환(웹 클라이언트 `barofit-web`) | 비어 있음 → Google 코드 로그인 503 |
 | `KAKAO_REST_API_KEY`, `KAKAO_CLIENT_SECRET` | Kakao 인가 코드 교환(REST API 키와 클라이언트 시크릿) | 비어 있음 → Kakao 코드 로그인 503 |
 
+| `PROFILE_IMAGE_STORAGE` | 프로필 사진 저장소. `temporary`(파일 보관 없는 임시) 또는 `s3` | `temporary` |
+| `PROFILE_IMAGE_PUBLIC_BASE_URL` | 사진 URL 앞부분. S3 연동 시 CloudFront 등 공개 주소 | `https://temp-storage.barofit.invalid` |
+| `PROFILE_IMAGE_S3_BUCKET`, `PROFILE_IMAGE_S3_REGION` | `s3`일 때 필수 | 비어 있음 |
+
 시크릿 두 개는 **서버 `.env`(운영은 Secret)에만** 둔다. 저장소, 앱, 문서에 넣지 않는다.
 
 애플리케이션 프로퍼티: `barofit.refresh-token.cleanup-cron`(기본 `0 0 4 * * *`), `barofit.scheduling.enabled`(테스트에서는 false).
@@ -465,9 +534,11 @@ API 요청 → 401 AUTH_TOKEN_EXPIRED
 | 구분 | 테스트 | 내용 |
 |---|---|---|
 | 단위 | `AccessTokenIssuerTest`, `JwtKeysTest`, `RefreshTokenValuesTest`, `SocialIdTokenVerifierTest`, `UserTest` | 토큰 claim, 키 짝 검증, 해시, ID Token의 iss·aud·exp·서명·nonce, 교환 client-id의 aud 허용, Kakao 사진 https 변환, 닉네임·URL 길이 |
+| 단위 | `NicknamePolicyTest`, `RandomNicknameGeneratorTest` | 닉네임 규칙, 랜덤 닉네임이 항상 규칙을 만족 |
 | 단위 | `SocialAuthorizationCodeClientTest` 8건 | 코드 교환 성공, 만료 코드(401), 잘못된 시크릿·소셜 서버 5xx·`id_token` 누락·설정 누락(503), 설정 toString의 시크릿 마스킹 |
 | 공통 | `GlobalExceptionHandlerTest`, `ErrorHandlingAutoConfigurationTest` | 에러 형식, 자동설정 중복 등록 방지 |
 | 통합(Testcontainers) | `AuthApiTest` 29건 | 가입·로그인, 인가 코드 가입(ID Token 방식과 같은 회원), 허용 안 된 redirectUri 400, 만료 코드 401, nonce 누락 400, 동시 가입(8스레드), 회전, 재사용 탐지, 동시 refresh, 만료, logout, 탈퇴 멱등, onboarded, 사용자 단건·여러 건 조회 |
+| 통합(Testcontainers) | `OnboardingApiTest` 13건 | 저장·조회, 선택 항목 생략, 재온보딩 409, 닉네임 중복(대소문자 무시)·형식 오류, 입력 검증 400, 다른 사용자 동시 같은 닉네임(6스레드), 같은 사용자 동시 온보딩, 랜덤 닉네임, 탈퇴 시 프로필 삭제·닉네임 반납, 미인증 401 |
 | 통합 | `SecurityConfigTest`, `JwksEndpointTest`, `IdentityPersistenceTest`, `BaroApplicationTests` | 만료·위조 구분, 공개 경로 헤더 무시, JWKS, 제약 조건, JwtDecoder Bean 하나 |
 | 구조 | `ArchitectureTests` 3건 | common 독립, api 패키지는 JDK만, 다른 도메인은 api 패키지만 참조 |
 
@@ -483,8 +554,7 @@ API 요청 → 401 AUTH_TOKEN_EXPIRED
 **확인하지 않은 것:** Android Expo Go에서의 구글 로그인(이번 범위에서 제외). Google은 WebView 로그인을 막는 정책이 있어 Android에서는 차단될 수 있다.
 
 **알려진 제한 (프론트엔드):**
-- 온보딩 저장 API가 없어 `isOnboarded`가 계속 false다. 로그인할 때마다 온보딩 화면으로 간다.
-- `GET /api/v1/users/me`가 없어 앱 재시작 시 자동 로그인을 하지 않는다.
+- 온보딩 저장 API와 `GET /api/v1/users/me`는 #10에서 추가됐다. 앱 연동은 아직 하지 않았다([onboarding-api.md](onboarding-api.md)).
 
 ---
 

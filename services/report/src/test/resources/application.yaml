@@ -1,5 +1,3 @@
-﻿spring:
+spring:
   flyway:
     enabled: false
-    locations: classpath:db/migration/report
-    table: report_flyway_schema_history

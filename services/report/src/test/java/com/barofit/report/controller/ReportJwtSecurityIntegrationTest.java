@@ -1,6 +1,7 @@
 package com.barofit.report.controller;
 
 import com.barofit.report.service.ReportService;
+import com.barofit.report.service.WorkoutSessionOwnershipClient;
 
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
@@ -36,7 +37,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @SpringBootTest
 @AutoConfigureMockMvc
-class ReportJwtSecurityIntegrationTest {
+class ReportJwtSecurityIntegrationTest extends com.barofit.report.ReportPostgresSupport {
 
     private static final KeyPair KEY_PAIR = generateKeyPair();
     private static final KeyPair OTHER_KEY_PAIR = generateKeyPair();
@@ -48,13 +49,12 @@ class ReportJwtSecurityIntegrationTest {
     @MockitoBean
     ReportService reportService;
 
+    @MockitoBean
+    WorkoutSessionOwnershipClient ownership;
+
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {
         registry.add("barofit.jwt.public-jwks-path", () -> JWKS_FILE.toString());
-        registry.add("spring.datasource.url",
-            () -> "jdbc:postgresql://localhost:5432/barofit_report_dev");
-        registry.add("spring.datasource.username", () -> "postgres");
-        registry.add("spring.datasource.password", () -> "postgres");
     }
 
     @Test

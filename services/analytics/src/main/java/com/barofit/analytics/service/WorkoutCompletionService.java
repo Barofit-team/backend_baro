@@ -46,6 +46,7 @@ public class WorkoutCompletionService {
         Objects.requireNonNull(
                 sessionId, "Session ID is required"
         );
+        Objects.requireNonNull(userId, "User ID is required");
         Objects.requireNonNull(
                 userId, "User ID is required"
         );

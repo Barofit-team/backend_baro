@@ -27,7 +27,7 @@ import static org.junit.jupiter.api.Assertions.*;
     "spring.jpa.hibernate.ddl-auto=validate",
     "spring.flyway.enabled=true"
 })
-class ReportPeriodIntegrationTest {
+class ReportPeriodIntegrationTest extends com.barofit.report.ReportPostgresSupport {
 
     @Autowired
     ReportService service;
@@ -66,7 +66,7 @@ class ReportPeriodIntegrationTest {
     }
 
     @Test
-    void dailySummaryUsesUtcBoundariesAndUserIsolation() {
+    void dailySummaryUsesSeoulBoundariesAndUserIsolation() {
         UUID user = UUID.randomUUID();
         UUID otherUser = UUID.randomUUID();
         UUID session = UUID.randomUUID();
@@ -78,10 +78,10 @@ class ReportPeriodIntegrationTest {
         UUID other = UUID.randomUUID();
 
         try {
-            insert(before, session, user, "2026-10-25T23:59:59Z");
-            insert(first, session, user, "2026-10-26T00:00:00Z");
-            insert(last, session, user, "2026-10-26T23:59:59Z");
-            insert(after, session, user, "2026-10-27T00:00:00Z");
+            insert(before, session, user, "2026-10-25T14:59:59Z");
+            insert(first, session, user, "2026-10-25T15:00:00Z");
+            insert(last, session, user, "2026-10-26T14:59:59Z");
+            insert(after, session, user, "2026-10-26T15:00:00Z");
             insert(other, session, otherUser, "2026-10-26T12:00:00Z");
 
             Map<String, Object> result =
@@ -111,7 +111,7 @@ class ReportPeriodIntegrationTest {
     }
 
     @Test
-    void weeklySummaryCoversExactlySevenUtcDays() {
+    void weeklySummaryCoversExactlySevenSeoulDays() {
         UUID user = UUID.randomUUID();
         UUID session = UUID.randomUUID();
 
@@ -120,9 +120,9 @@ class ReportPeriodIntegrationTest {
         UUID dayEight = UUID.randomUUID();
 
         try {
-            insert(dayOne, session, user, "2026-10-26T00:00:00Z");
-            insert(daySeven, session, user, "2026-11-01T23:59:59Z");
-            insert(dayEight, session, user, "2026-11-02T00:00:00Z");
+            insert(dayOne, session, user, "2026-10-25T15:00:00Z");
+            insert(daySeven, session, user, "2026-11-01T14:59:59Z");
+            insert(dayEight, session, user, "2026-11-01T15:00:00Z");
 
             Map<String, Object> result =
                 service.getWeeklySummary(

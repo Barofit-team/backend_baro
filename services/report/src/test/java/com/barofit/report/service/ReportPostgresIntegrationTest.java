@@ -26,7 +26,7 @@ import static org.junit.jupiter.api.Assertions.*;
     "spring.flyway.enabled=true"
 })
 @Transactional
-class ReportPostgresIntegrationTest {
+class ReportPostgresIntegrationTest extends com.barofit.report.ReportPostgresSupport {
 
     @Autowired
     private ReportService service;
@@ -39,6 +39,41 @@ class ReportPostgresIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbc;
+
+    @Test
+    void generatedReportWaitsForResultsAndPersistsExerciseDetails() throws Exception {
+        UUID user = UUID.randomUUID(), session = UUID.randomUUID(), routine = UUID.randomUUID();
+        UUID exercise = UUID.randomUUID(), set = UUID.randomUUID();
+        ReportSourceClient sources = org.mockito.Mockito.mock(ReportSourceClient.class);
+        var workout = mapper.readTree("""
+          {"status":"COMPLETED","endedAt":"2026-10-15T00:30:00Z","activeDurationSeconds":120,
+           "restDurationSeconds":30,"routineSnapshot":{"name":"전신","exercises":[
+             {"id":"%s","exerciseId":"push-up","name":"푸시업","sets":[{"id":"%s"}]}]},
+           "sets":[{"routineSetId":"%s","actualReps":10,"errorCounts":{"HIP_DROP":2}}]}
+          """.formatted(exercise, set, set));
+        org.mockito.Mockito.when(sources.workout(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString()))
+            .thenReturn(workout);
+        var generator = new GeneratedReportService(sources, service, jdbc, mapper);
+        assertThrows(org.springframework.web.server.ResponseStatusException.class,
+            () -> generator.generate(user, session, "Bearer test"));
+        var payload = mapper.readTree("""
+          {"schemaVersion":"2.0","type":"set.completed","exercise":"pushup","engineVersion":"test",
+           "summary":{"schemaVersion":"2.0","exercise":"pushup","engineVersion":"test","count":10,
+           "items":{"hip_alignment":{"aggregationBasis":"repetition","unit":"repetitions",
+             "compliant":8,"warning":2,"unknown":0,"notApplicable":0,"evaluated":10,"compliancePct":80}}}}
+          """);
+        service.saveSet(user, session, UUID.randomUUID(), payload, null, set);
+        var generated = generator.generate(user, session, "Bearer test");
+        assertEquals(30, generated.restSeconds());
+        assertEquals(80.0, generated.routineScore());
+        assertEquals(2L, generated.exercises().getFirst().errorCounts().get("HIP_DROP"));
+        assertEquals(80.0, generated.exercises().getFirst().postureItems().getFirst().compliancePct());
+        assertTrue(generated.exercises().getFirst().improvements().contains("골반 정렬"));
+        assertEquals(generated, generator.get(user, session, "Bearer test"));
+        assertEquals(generated, generator.generate(user, session, "Bearer test"));
+        assertThrows(org.springframework.web.server.ResponseStatusException.class,
+            () -> generator.get(UUID.randomUUID(), session, "Bearer test"));
+    }
 
     @Test
     void savesReadsAndAggregatesRealPostgresData() throws Exception {

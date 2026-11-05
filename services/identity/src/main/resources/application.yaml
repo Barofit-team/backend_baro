@@ -12,6 +12,11 @@ spring:
     hibernate:
       # 스키마는 Flyway만 변경
       ddl-auto: validate
+  servlet:
+    multipart:
+      # 프로필 사진 5MB(ProfileImageFile.MAX_SIZE). 요청 전체는 multipart 헤더만큼 여유를 둔다
+      max-file-size: 5MB
+      max-request-size: 6MB
 
 barofit:
   cors:
@@ -21,6 +26,13 @@ barofit:
     private-key-path: ${JWT_PRIVATE_KEY_PATH:}
     public-jwks-path: ${JWT_PUBLIC_JWKS_PATH:}
     current-kid: ${JWT_CURRENT_KID:}
+  profile-image:
+    # temporary: S3 연동 전 임시 저장소(파일을 보관하지 않고 임시 URL만 반환), s3: 미구현
+    storage: ${PROFILE_IMAGE_STORAGE:temporary}
+    public-base-url: ${PROFILE_IMAGE_PUBLIC_BASE_URL:https://temp-storage.barofit.invalid}
+    s3:
+      bucket: ${PROFILE_IMAGE_S3_BUCKET:}
+      region: ${PROFILE_IMAGE_S3_REGION:}
   social:
     # 허용 redirect_uri. 콘솔 등록값과 같아야 함
     redirect-uris: ${SOCIAL_REDIRECT_URIS:http://localhost:8081}

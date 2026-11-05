@@ -32,7 +32,7 @@ import static org.junit.jupiter.api.Assertions.*;
     "spring.jpa.hibernate.ddl-auto=validate",
     "spring.flyway.enabled=true"
 })
-class ReportConcurrencyIntegrationTest {
+class ReportConcurrencyIntegrationTest extends com.barofit.report.ReportPostgresSupport {
 
     @Autowired
     ReportService service;

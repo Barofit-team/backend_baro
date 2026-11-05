@@ -1,13 +1,13 @@
 # BaroFit Report Service - Session Ownership Contract
 
 ## Status
-PROPOSED - Integration contract not yet approved.
+IMPLEMENTED for report-set HTTP uploads. Workout Service owns sessions; the independent Report Service checks ownership by calling its authenticated session-detail API before each new or repeated set upload.
 
 ## Current implementation
 - JWT authentication identifies the requesting user.
 - Report reads are filtered by authenticated userId and sessionId.
 - Existing setId cannot be reused by another user or session.
-- New sessionId ownership is NOT independently verified on set creation.
+- New sessionId ownership is verified against Workout Service using the caller's Bearer token. Unknown or another user's session returns 404; Workout lookup failure returns 503.
 - workout_record_views represents completed workouts, not necessarily active sessions.
 
 ## Required security invariant
@@ -28,16 +28,13 @@ a userId or sessionId field alone.
 7. Offline replay must use a previously authorized session.
 8. Session lifecycle and expiration rules require agreement.
 
-## Open decisions for Routine / App / Backend teams
+## Agreed behavior
 
-- Which service owns workout-session creation?
-- Which database or API is authoritative for ownership?
-- When is a workout session created and completed?
-- Can offline-created session IDs be accepted?
-- How are offline uploads authenticated after reconnection?
-- Can sets be uploaded after session completion?
-- What retention and expiration rules apply?
-- What happens when session ownership lookup is unavailable?
+- Workout Service owns session creation and lifecycle. `PUT /api/v1/workout-sessions/{sessionId}` accepts a device-generated UUID and stores the authenticated owner.
+- Report calls `GET /api/v1/workout-sessions/{sessionId}` with the same Bearer token. A 200 permits the report upload. A 404 rejects unknown or other-user sessions. A 401/403 rejects authentication. Other responses or network failures fail closed with 503.
+- Offline workouts must sync to Workout Service before their report sets are uploaded. Reports may be uploaded for active, paused, completed, or abandoned sessions because historical offline results can arrive after completion.
+- Existing identical uploads remain idempotent, but ownership is rechecked on each request.
+- Session retention/expiration remains a future decision. Qualifying finished sessions are delivered to Analytics through the Workout outbox; posture-set results are uploaded separately to Report.
 
 ## Acceptance tests required after implementation
 
@@ -49,11 +46,9 @@ a userId or sessionId field alone.
 - Duplicate concurrent uploads create only one set.
 - Invalid item data rolls back the transaction.
 
-## Release blocker
+## Verification
 
-Do not claim complete session-ownership authorization
-until an authoritative backend session contract exists
-and its acceptance tests pass.
+The ownership client tests cover authenticated lookup and unknown sessions; the report HTTP test checks that a failed ownership lookup prevents saving a set. End-to-end testing with real JWTs and synchronized offline sessions is still required before release.
 
 ## Existing verification
 
