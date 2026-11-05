@@ -1,0 +1,23 @@
+﻿services:
+  analytics-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE_NAME: analytics
+    environment:
+      ANALYTICS_PORT: "8080"
+      DB_URL: jdbc:postgresql://postgres:5432/barofit
+      DB_USERNAME: ${DB_USERNAME:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      JWT_PUBLIC_JWKS_PATH: /app/secrets/jwt-jwks.json
+    volumes:
+      - ./keys/jwt-jwks.json:/run/secrets/jwt/jwt-jwks.json:ro
+    depends_on:
+      - postgres
+    restart: unless-stopped
+  gateway:
+    depends_on:
+      - analytics-service
+    volumes:
+      - ./deploy/nginx.analytics.conf:/etc/nginx/conf.d/default.conf:ro
