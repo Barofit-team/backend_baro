@@ -1,4 +1,4 @@
-﻿name: BaroFit Backend CI
+name: BaroFit Backend CI
 
 on:
   push:
@@ -19,6 +19,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: barofit_analytics_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d barofit_analytics_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -34,6 +49,18 @@ jobs:
 
       - name: Verify Docker
         run: docker info
+
+      - name: Initialize Analytics test database
+        run: |
+          docker run --rm --network host \
+            -v "$PWD/services/analytics/src/main/resources/db/migration/analytics/V1__create_analytics_tables.sql:/schema.sql:ro" \
+            -e PGPASSWORD=postgres \
+            postgres:17 \
+            psql -h 127.0.0.1 -p 5432 \
+              -U postgres \
+              -d barofit_analytics_test \
+              -v ON_ERROR_STOP=1 \
+              -f /schema.sql
 
       - name: Grant Gradle permission
         run: chmod +x ./gradlew
