@@ -1,8 +1,8 @@
 package com.barofit.report.service;
 
 import com.barofit.report.repository.ReportRepository;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -76,7 +76,7 @@ class ReportConcurrencyIntegrationTest extends com.barofit.report.ReportPostgres
         JsonNode node = mapper.readTree(json);
 
         if (!valid) {
-            ((com.fasterxml.jackson.databind.node.ObjectNode)
+            ((tools.jackson.databind.node.ObjectNode)
                 node.path("summary")
                     .path("items")
                     .path("hip_alignment"))

@@ -1,9 +1,9 @@
 package com.barofit.report.service;
 
 import com.barofit.report.repository.ReportRepository.ScoreItem;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import java.util.*;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -66,7 +66,7 @@ public class GeneratedReportService {
                 if (set == null || (set.path("actualReps").asInt(0) <= 0 && set.path("actualDurationSeconds").asInt(0) <= 0)) continue;
                 performed++; totalPerformed++;
                 reps += set.path("actualReps").asInt(0); duration += set.path("actualDurationSeconds").asInt(0);
-                set.path("errorCounts").fields().forEachRemaining(e -> errors.merge(e.getKey(), e.getValue().asLong(), Long::sum));
+                set.path("errorCounts").forEachEntry((key, value) -> errors.merge(key, value.asLong(), Long::sum));
                 List<ScoreItem> setItems = itemsBySet.get(UUID.fromString(planned.path("id").asText()));
                 if (setItems == null) throw new ResponseStatusException(HttpStatus.CONFLICT, "AI results are missing for performed sets");
                 for (ScoreItem item : setItems) {
@@ -115,7 +115,7 @@ public class GeneratedReportService {
         try {
             jdbc.update("INSERT INTO generated_workout_reports(session_id,user_id,report_json) VALUES (?,?,?::jsonb) ON CONFLICT (session_id) DO NOTHING",
                 sessionId, user, json.writeValueAsString(generated));
-        } catch (JsonProcessingException ex) { throw new IllegalStateException(ex); }
+        } catch (JacksonException ex) { throw new IllegalStateException(ex); }
         Generated result = find(user, sessionId);
         if (result == null) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Workout not found");
         return result;
@@ -142,6 +142,6 @@ public class GeneratedReportService {
             (rs, n) -> rs.getString(1), user, session);
         if (rows.isEmpty()) return null;
         try { return json.readValue(rows.get(0), Generated.class); }
-        catch (JsonProcessingException ex) { throw new IllegalStateException("Stored report is invalid", ex); }
+        catch (JacksonException ex) { throw new IllegalStateException("Stored report is invalid", ex); }
     }
 }

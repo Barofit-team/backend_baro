@@ -2,11 +2,11 @@ package com.barofit.report.controller;
 
 import com.barofit.report.service.ReportService;
 import com.barofit.report.service.WorkoutSessionOwnershipClient;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
+import org.springframework.http.converter.json.JacksonJsonHttpMessageConverter;
 import org.springframework.http.converter.StringHttpMessageConverter;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -32,7 +32,7 @@ class ReportControllerHttpTest {
         .standaloneSetup(new ReportController(service, ownership, new ObjectMapper()))
         .setMessageConverters(
             new StringHttpMessageConverter(),
-            new MappingJackson2HttpMessageConverter(new ObjectMapper())
+            new JacksonJsonHttpMessageConverter()
         )
         .build();
 
@@ -124,7 +124,7 @@ class ReportControllerHttpTest {
                 eq(userId),
                 eq(sessionId),
                 eq(setId),
-                any(com.fasterxml.jackson.databind.JsonNode.class), isNull()
+                any(tools.jackson.databind.JsonNode.class), isNull()
             ))
             .thenReturn(Map.of(
                 "setId", setId,
@@ -146,7 +146,7 @@ class ReportControllerHttpTest {
             eq(userId),
             eq(sessionId),
             eq(setId),
-            any(com.fasterxml.jackson.databind.JsonNode.class), isNull()
+            any(tools.jackson.databind.JsonNode.class), isNull()
         );
         verify(ownership).requireOwned(sessionId, "Bearer owner-token");
     }
@@ -198,7 +198,7 @@ class ReportControllerHttpTest {
                 eq(userId),
                 eq(sessionId),
                 eq(setId),
-                any(com.fasterxml.jackson.databind.JsonNode.class), isNull()
+                any(tools.jackson.databind.JsonNode.class), isNull()
             ))
             .thenThrow(new ResponseStatusException(
                 HttpStatus.BAD_REQUEST,
@@ -235,7 +235,7 @@ class ReportControllerHttpTest {
                 eq(userId),
                 eq(sessionId),
                 eq(setId),
-                any(com.fasterxml.jackson.databind.JsonNode.class), isNull()
+                any(tools.jackson.databind.JsonNode.class), isNull()
             ))
             .thenThrow(new ResponseStatusException(
                 HttpStatus.CONFLICT,

@@ -1,6 +1,6 @@
 package com.barofit.report.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -61,7 +61,7 @@ class ReportViewServiceTest {
         UUID a = UUID.randomUUID(), b = UUID.randomUUID();
         var exercise = json.readTree("{\"sets\":[{\"id\":\"" + a + "\"},{\"id\":\"" + b + "\"}]}");
         var done = json.readTree("{\"actualReps\":2}");
-        Map<String, com.fasterxml.jackson.databind.JsonNode> results = Map.of(a.toString(), done, b.toString(), done);
+        Map<String, tools.jackson.databind.JsonNode> results = Map.of(a.toString(), done, b.toString(), done);
         var first = List.of(new com.barofit.report.repository.ReportRepository.ScoreItem(a,"a","repetition","repetitions",1,0),
             new com.barofit.report.repository.ReportRepository.ScoreItem(a,"b","repetition","repetitions",0,1),
             new com.barofit.report.repository.ReportRepository.ScoreItem(a,"unknown","repetition","repetitions",0,0));
