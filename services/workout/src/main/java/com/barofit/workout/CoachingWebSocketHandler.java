@@ -102,7 +102,7 @@ public class CoachingWebSocketHandler extends TextWebSocketHandler {
                               CoachingStyle style, long sequence) {
         String text = fallback;
         AtomicBoolean inFlight = (AtomicBoolean) socket.getAttributes().get("gptInFlight");
-        boolean generating = event.equals("SET_FEEDBACK") && feedback.configured()
+        boolean generating = (event.equals("SET_FEEDBACK") || event.equals("REP_FEEDBACK")) && feedback.configured()
             && CoachingMessageCatalog.finding(message.path("feedbackCode").asText()) != null
             && inFlight.compareAndSet(false, true);
         try {
