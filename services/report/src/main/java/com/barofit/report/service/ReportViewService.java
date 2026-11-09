@@ -1,8 +1,8 @@
 package com.barofit.report.service;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import com.barofit.report.repository.ReportRepository.ScoreItem;
 import java.time.*;
 import java.util.*;
@@ -237,7 +237,7 @@ public class ReportViewService {
                 if (!rs.next()) return null;
                 try { return new Feedback(rs.getString("difficulty"), mapper.readValue(rs.getString("areas"),
                     mapper.getTypeFactory().constructCollectionType(List.class, String.class))); }
-                catch (JsonProcessingException e) { throw new IllegalStateException(e); }
+                catch (JacksonException e) { throw new IllegalStateException(e); }
             }, userId, sessionId);
     }
 
@@ -260,7 +260,7 @@ public class ReportViewService {
                 """, sessionId, userId, input.difficulty(), mapper.writeValueAsString(input.discomfortAreas()));
             if (changed != 1) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Workout not found");
             return input;
-        } catch (JsonProcessingException e) { throw new IllegalStateException(e); }
+        } catch (JacksonException e) { throw new IllegalStateException(e); }
     }
 
     private static int plannedSets(JsonNode snapshot) {

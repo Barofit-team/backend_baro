@@ -1,8 +1,8 @@
 package com.barofit.report.service;
 
 import com.barofit.report.repository.ReportRepository;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -162,7 +162,7 @@ public class ReportService {
                         HttpStatus.CONFLICT,
                         "Set ID reused with different payload");
                 }
-            } catch (com.fasterxml.jackson.core.JsonProcessingException ex) {
+            } catch (tools.jackson.core.JacksonException ex) {
                 throw new IllegalStateException(
                     "Stored JSON is invalid", ex);
             }
@@ -190,15 +190,8 @@ public class ReportService {
                 engineVersion, timestamp, count,
                 hold, observed, gap, performedAt, payload.toString(), routineSetId);
 
-            Iterator<Map.Entry<String, JsonNode>> iterator =
-                items.fields();
-
-            while (iterator.hasNext()) {
-                Map.Entry<String, JsonNode> entry =
-                    iterator.next();
-
-                String itemId = entry.getKey();
-                JsonNode item = entry.getValue();
+            for (String itemId : items.propertyNames()) {
+                JsonNode item = items.path(itemId);
 
                 String basis = requiredText(
                     item, "aggregationBasis");
