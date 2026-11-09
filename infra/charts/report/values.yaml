@@ -1,0 +1,62 @@
+nameOverride: report-service
+
+replicaCount: 1
+
+global:
+  imageTag: ""
+
+image:
+  repository: ""
+  tag: ""
+  pullPolicy: IfNotPresent
+
+service:
+  port: 8080
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 234Mi
+  limits:
+    cpu: "1"
+    memory: 256Mi
+
+probe:
+  path: /actuator/health
+  port: 8080
+
+waitForPostgres:
+  enabled: true
+  image: postgres:18.6
+  host: postgres
+  port: 5432
+
+secrets:
+  postgresSecretName: barofit-postgres-credentials
+  jwtSecretName: barofit-jwt-keys
+  jwtIncludePrivateKey: false
+  appSecretName: ""
+  extraSecretRefs: []
+
+config:
+  CORS_ALLOWED_ORIGINS: "http://localhost:8081"
+  REPORT_DB_URL: "jdbc:postgresql://postgres:5432/barofit?currentSchema=report"
+  JWT_PUBLIC_JWKS_PATH: /app/secrets/jwt-jwks.json
+  WORKOUT_BASE_URL: "http://workout-service:8080"
+  ROUTINE_BASE_URL: "http://routine-service:8080"
+  # application.yaml 기본값(3008)이 아니라 컨테이너 내부 포트 8080으로 강제 (compose.yaml과 동일)
+  REPORT_PORT: "8080"
+  # compose.ec2.yaml의 JVM 튜닝(x-jvm-environment)을 그대로 적용 — 없으면 256Mi 제한에서 OOMKilled됨
+  JAVA_TOOL_OPTIONS: >-
+    -XX:MaxRAMPercentage=33
+    -XX:+UseSerialGC
+    -XX:TieredStopAtLevel=1
+    -XX:ReservedCodeCacheSize=32m
+    -XX:MaxMetaspaceSize=112m
+    -Xss512k
+    -XX:+ExitOnOutOfMemoryError
+  MALLOC_ARENA_MAX: "2"
+  SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: "4"
+  SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE: "1"
+  SERVER_TOMCAT_THREADS_MAX: "32"
+  SERVER_TOMCAT_THREADS_MIN_SPARE: "2"

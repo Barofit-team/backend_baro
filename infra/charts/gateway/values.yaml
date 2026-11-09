@@ -1,0 +1,24 @@
+nameOverride: gateway
+
+image:
+  repository: nginx
+  tag: "1.28-alpine"
+  pullPolicy: IfNotPresent
+
+service:
+  type: NodePort
+  port: 8080
+  nodePort: 30080
+
+nginx:
+  # 비워두면 kube-dns Service의 ClusterIP를 helm lookup으로 설치 시점에 조회.
+  # helm template(클러스터 미접속)이나 lookup 실패 시 10.96.0.10(minikube/kubeadm 기본 kube-dns IP)로 대체.
+  resolverIp: ""
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 32Mi
+  limits:
+    cpu: 250m
+    memory: 32Mi

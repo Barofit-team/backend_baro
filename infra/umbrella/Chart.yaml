@@ -1,0 +1,28 @@
+apiVersion: v2
+name: barofit
+description: Umbrella chart for local minikube install (convenience wrapper only; each subchart stays independently installable)
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+dependencies:
+  - name: postgres
+    version: "0.1.0"
+    repository: "file://../charts/postgres"
+  - name: identity
+    version: "0.1.0"
+    repository: "file://../charts/identity"
+  - name: routine
+    version: "0.1.0"
+    repository: "file://../charts/routine"
+  - name: workout
+    version: "0.1.0"
+    repository: "file://../charts/workout"
+  - name: analytics
+    version: "0.1.0"
+    repository: "file://../charts/analytics"
+  - name: report
+    version: "0.1.0"
+    repository: "file://../charts/report"
+  - name: gateway
+    version: "0.1.0"
+    repository: "file://../charts/gateway"

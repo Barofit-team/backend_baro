@@ -1,0 +1,6 @@
+apiVersion: v2
+name: gateway
+description: Barofit nginx gateway (lift-and-shift of deploy/nginx.conf)
+type: application
+version: 0.1.0
+appVersion: "1.28"

@@ -1,0 +1,70 @@
+{{- $resolverIp := .Values.nginx.resolverIp -}}
+{{- if not $resolverIp -}}
+  {{- $kubeDns := lookup "v1" "Service" "kube-system" "kube-dns" -}}
+  {{- if and $kubeDns $kubeDns.spec $kubeDns.spec.clusterIP -}}
+    {{- $resolverIp = $kubeDns.spec.clusterIP -}}
+  {{- else -}}
+    {{- $resolverIp = "10.96.0.10" -}}
+  {{- end -}}
+{{- end -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "gateway.name" . }}-nginx-conf
+  labels:
+    {{- include "gateway.labels" . | nindent 4 }}
+data:
+  default.conf: |
+    server {
+        listen 8080;
+        server_name _;
+        # Docker 전용 127.0.0.11 대신 CoreDNS(kube-dns)를 쓴다. 나머지 라우팅 로직은
+        # deploy/nginx.conf와 동일(변수 기반 proxy_pass라 resolver 지시어는 유지해야 함).
+        # 주의: nginx의 resolver 지시어는 Pod의 /etc/resolv.conf search 도메인을 타지 않고
+        # 짧은 이름을 그대로 질의하므로(예: "identity-service" -> Host not found),
+        # 반드시 <service>.<namespace>.svc.cluster.local 형태의 FQDN을 써야 한다.
+        resolver {{ $resolverIp }} valid=10s ipv6=off;
+        set $identity http://identity-service.{{ .Release.Namespace }}.svc.cluster.local:8080;
+        set $routine http://routine-service.{{ .Release.Namespace }}.svc.cluster.local:8080;
+        set $workout http://workout-service.{{ .Release.Namespace }}.svc.cluster.local:8080;
+        set $analytics http://analytics-service.{{ .Release.Namespace }}.svc.cluster.local:8080;
+        set $report http://report-service.{{ .Release.Namespace }}.svc.cluster.local:8080;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Host $http_host;
+        # 프로필 사진 업로드(5MB) + multipart 여유. 기본값 1m이면 413
+        client_max_body_size 6m;
+        error_page 413 @content_too_large;
+        location @content_too_large {
+            default_type application/problem+json;
+            return 413 '{"type":"about:blank","title":"Content Too Large","status":413,"detail":"프로필 사진은 5MB 이하만 올릴 수 있습니다.","code":"PROFILE_IMAGE_TOO_LARGE"}';
+        }
+        location = /health { default_type application/json; return 200 '{"status":"UP"}'; }
+        location = /identity/v3/api-docs { proxy_pass $identity/v3/api-docs; }
+        location = /identity/actuator/health { proxy_pass $identity/actuator/health; }
+        location ~ ^/(api/v1/(auth|users)(/|$)|\.well-known/jwks\.json$) {
+            proxy_pass $identity$request_uri;
+        }
+        location /ws/coaching {
+            proxy_pass $workout$request_uri;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+            proxy_read_timeout 120s;
+        }
+        location /api/v1/workout-sessions {
+            proxy_pass $workout$request_uri;
+        }
+        location = /workout/v3/api-docs { proxy_pass $workout/v3/api-docs; }
+        location = /workout/actuator/health { proxy_pass $workout/actuator/health; }
+        location ~ ^/api/v1/(workout-records|statistics|calendar)(/|$) {
+            proxy_pass $analytics$request_uri;
+        }
+        location ~ ^/api/v1/reports(/|$) { proxy_pass $report$request_uri; }
+        location = /report/v3/api-docs { proxy_pass $report/v3/api-docs; }
+        location = /report/actuator/health { proxy_pass $report/actuator/health; }
+        location = /analytics/v3/api-docs { proxy_pass $analytics/v3/api-docs; }
+        location = /analytics/actuator/health { proxy_pass $analytics/actuator/health; }
+        location / { proxy_pass $routine$request_uri; }
+    }

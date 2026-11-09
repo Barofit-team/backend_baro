@@ -1,0 +1,95 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "routine.name" . }}
+  labels:
+    {{- include "routine.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "routine.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "routine.labels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      {{- if .Values.waitForPostgres.enabled }}
+      initContainers:
+        - name: wait-for-postgres
+          image: "{{ .Values.waitForPostgres.image }}"
+          command:
+            - sh
+            - -c
+            - |
+              until pg_isready -h {{ .Values.waitForPostgres.host }} -p {{ .Values.waitForPostgres.port }} -U postgres -d barofit; do
+                echo "waiting for postgres...";
+                sleep 2;
+              done
+      {{- end }}
+      containers:
+        - name: routine
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Values.global.imageTag | default "latest" }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "routine.name" . }}-config
+            {{- if .Values.secrets.appSecretName }}
+            - secretRef:
+                name: {{ .Values.secrets.appSecretName }}
+            {{- end }}
+            {{- range .Values.secrets.extraSecretRefs }}
+            - secretRef:
+                name: {{ . }}
+            {{- end }}
+          env:
+            - name: DB_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.postgresSecretName }}
+                  key: DB_USERNAME
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.postgresSecretName }}
+                  key: DB_PASSWORD
+          volumeMounts:
+            - name: jwt-keys
+              mountPath: /run/secrets/jwt
+              readOnly: true
+          startupProbe:
+            httpGet:
+              path: {{ .Values.probe.path }}
+              port: {{ .Values.probe.port }}
+            periodSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.probe.path }}
+              port: {{ .Values.probe.port }}
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.probe.path }}
+              port: {{ .Values.probe.port }}
+            periodSeconds: 15
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: jwt-keys
+          secret:
+            secretName: {{ .Values.secrets.jwtSecretName }}
+            items:
+              - key: jwt-jwks.json
+                path: jwt-jwks.json
+              {{- if .Values.secrets.jwtIncludePrivateKey }}
+              - key: jwt-private.pem
+                path: jwt-private.pem
+              {{- end }}

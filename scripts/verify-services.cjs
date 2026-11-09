@@ -21,7 +21,7 @@ async function call(path,method='GET',body,auth){return fetch(base+path,{method,
  assert.equal((await call('/.well-known/jwks.json')).status,200);
 
  const docs=await (await call('/v3/api-docs')).json();assert.ok(docs.paths['/api/v1/routines']);assert.equal(docs.paths['/api/v1/auth/social-login/code'],undefined);
- const templates=await (await call('/api/v1/routine-templates')).json();assert.equal(templates.length,9);
+ const templates=await (await call('/api/v1/routine-templates')).json();assert.equal(templates.length,24);
  assert.equal((await call('/api/v1/routines')).status,401);
  const template=templates.find(t=>t.category==='FULL_BODY'&&t.difficulty==='BEGINNER');
  const plank=template.exercises.find(e=>e.exerciseId==='plank');
@@ -37,5 +37,5 @@ async function call(path,method='GET',body,auth){return fetch(base+path,{method,
  }finally{assert.equal((await call(path,'DELETE',undefined,own)).status,204);}
  assert.equal((await call(path,'GET',undefined,own)).status,404);
  const cors=await fetch(base+'/api/v1/routines',{method:'OPTIONS',headers:{Origin:'http://localhost:8081','Access-Control-Request-Method':'POST','Access-Control-Request-Headers':'authorization,content-type'}});assert.equal(cors.status,200);assert.equal(cors.headers.get('access-control-allow-origin'),'http://localhost:8081');
- console.log('PASS: health, Swagger, 9 templates, JWT protection, create/read/update/delete, ownership, immutable fields, CORS. Test routine deleted. Local signed JWT; no real OAuth login.');
+ console.log('PASS: health, Swagger, 24 templates, JWT protection, create/read/update/delete, ownership, immutable fields, CORS. Test routine deleted. Local signed JWT; no real OAuth login.');
 })().catch(e=>{console.error(e.message);process.exit(1)});

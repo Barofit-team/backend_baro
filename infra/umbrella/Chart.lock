@@ -1,0 +1,24 @@
+dependencies:
+- name: postgres
+  repository: file://../charts/postgres
+  version: 0.1.0
+- name: identity
+  repository: file://../charts/identity
+  version: 0.1.0
+- name: routine
+  repository: file://../charts/routine
+  version: 0.1.0
+- name: workout
+  repository: file://../charts/workout
+  version: 0.1.0
+- name: analytics
+  repository: file://../charts/analytics
+  version: 0.1.0
+- name: report
+  repository: file://../charts/report
+  version: 0.1.0
+- name: gateway
+  repository: file://../charts/gateway
+  version: 0.1.0
+digest: sha256:53eeed6d559134b0ea2660ff886d7a2befa29ba9680c617e745fbf89c0bf5d72
+generated: "2026-11-09T16:10:09.70465+09:00"
