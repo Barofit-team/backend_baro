@@ -62,14 +62,14 @@ class RoutineApiTests {
     @Test
     void expandedCatalogAndTemplatesExposeCategoryGuidesAndGoals() throws Exception {
         mvc.perform(get("/api/v1/exercises")).andExpect(status().isOk())
-            .andExpect(jsonPath("$", hasSize(45)))
+            .andExpect(jsonPath("$", hasSize(47)))
             .andExpect(jsonPath("$[*].id", hasItems("push-up", "squat", "plank", "bird-dog", "tuck-jump")));
         mvc.perform(get("/api/v1/exercises/plank")).andExpect(status().isOk())
             .andExpect(jsonPath("$.measurementType").value("DURATION"))
             .andExpect(jsonPath("$.introTtsText", not(emptyString())))
             .andExpect(jsonPath("$.assessmentStatus").value("READY"));
         mvc.perform(get("/api/v1/exercises/glute-bridge")).andExpect(status().isOk())
-            .andExpect(jsonPath("$.assessmentStatus").value("IN_PROGRESS"));
+            .andExpect(jsonPath("$.assessmentStatus").value("READY"));
         mvc.perform(get("/api/v1/routine-templates")).andExpect(status().isOk())
             .andExpect(jsonPath("$", hasSize(24))).andExpect(jsonPath("$[0].category").value("FULL_BODY"));
         for (String category : new String[]{"FULL_BODY", "LOWER_BODY", "UPPER_BODY", "BACK", "CORE", "CARDIO"}) {
@@ -372,7 +372,7 @@ class RoutineApiTests {
 
     @Test
     void independentMigrationHistoriesIncludeTemplateCustomization() {
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM routine.flyway_schema_history WHERE success AND version IS NOT NULL", Integer.class)).isEqualTo(7);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM routine.flyway_schema_history WHERE success AND version IS NOT NULL", Integer.class)).isEqualTo(8);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM identity.flyway_schema_history WHERE success AND version IS NOT NULL", Integer.class)).isPositive();
     }
 
